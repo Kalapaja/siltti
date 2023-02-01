@@ -6,15 +6,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-frame-metadata = "15.0.0"
+frame-metadata = {git = "https://github.com/paritytech/frame-metadata", rev = "1ea329920838b3f4170f421cde53ce7e6a15ccee", default-features = false, features = ["v14", "decode"]}
 hex = "0.4.3"
-parity-scale-codec = "3.2.1"
+parity-scale-codec = "3.1.5"
 raptorq = "1.7.0"
 sled = "0.34.7"
-sp-core = {version = "6.0.0", default-features = false, features = ["full_crypto"]}
-sp-runtime = "6.0.0"
-substrate_parser = {git = "https://github.com/Alzymologist/substrate-parser", rev = "e1a298d76eaf5074e6de3f9d3e63406b7bc25b16"}
+sp-core = {version = "7.0.0", default-features = false, features = ["full_crypto"]}
+substrate_parser = {git = "https://github.com/Alzymologist/substrate-parser", rev = "9f6e9ad9229cb6a0138ac37e7ecc6b00e743762e"}
 thiserror = "1.0.35"
+
+kampela-common = {path = "../../../common"}
 
 [lib]
 name = "database"
