@@ -16,4 +16,3 @@ local.properties
 # firmware build
 # rustfmt
 **/*.rs.bk
-
