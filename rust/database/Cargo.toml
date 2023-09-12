@@ -14,7 +14,7 @@ sp-core = {version = "9.0.0", default-features = false, features = ["full_crypto
 substrate_parser = { git = "https://github.com/Alzymologist/substrate-parser", default-features = false, features = ["embed-display"] }
 thiserror = "1.0.35"
 
-kampela-common = {path = "../../../common"}
+kampela-common = {git = "https://github.com/Kalapaja/kampela-common"}
 lt-codes = {git = "https://github.com/Alzymologist/LT-codes"}
 rand = "0.8.4"
 
