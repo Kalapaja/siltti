@@ -13,3 +13,10 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Rust
+# Siltti compiled code
+**/target/
+# firmware build
+# rustfmt
+**/*.rs.bk

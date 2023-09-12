@@ -677,6 +677,7 @@ checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
 [[package]]
 name = "kampela-common"
 version = "0.1.0"
+source = "git+https://github.com/Kalapaja/kampela-common#87274f977a63d37ad548062d54c8f559db2454fc"
 dependencies = [
  "parity-scale-codec",
  "sp-core 7.0.0",
