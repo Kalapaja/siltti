@@ -47,7 +47,7 @@ fun NewAddress(
             Button(
                 onClick = {
                     val selected = selector.value.collectSelectedKeys()
-                    transmitCallback(Action.newDerivation(selected, address, hasPwd, Signer()))
+                    transmitCallback(Action.newDerivation(address, hasPwd, Signer()))
                     setAppState(Mode.TX)
                 },
             ) {
