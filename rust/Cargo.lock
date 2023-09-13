@@ -767,7 +767,7 @@ checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
 [[package]]
 name = "kampela-common"
 version = "0.1.0"
-source = "git+https://github.com/Kalapaja/kampela-common#87274f977a63d37ad548062d54c8f559db2454fc"
+source = "git+https://github.com/Kalapaja/kampela-common?rev=c7219c738932f98c3de52b80d1475c6a2f7f0bee#c7219c738932f98c3de52b80d1475c6a2f7f0bee"
 dependencies = [
  "parity-scale-codec",
  "sp-core 7.0.0",
@@ -1779,7 +1779,7 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 [[package]]
 name = "substrate_parser"
 version = "0.4.0"
-source = "git+https://github.com/Alzymologist/substrate-parser#075829715877f23ee18bc5a1ff576bfbc997d3b8"
+source = "git+https://github.com/Alzymologist/substrate-parser?rev=b3b9637287b6045cefe774fc0f44b9ad297e6066#b3b9637287b6045cefe774fc0f44b9ad297e6066"
 dependencies = [
  "base58",
  "bitvec",

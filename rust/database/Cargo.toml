@@ -11,10 +11,10 @@ hex = "0.4.3"
 parity-scale-codec = "3.1.5"
 sled = "0.34.7"
 sp-core = {version = "9.0.0", default-features = false, features = ["full_crypto"]}
-substrate_parser = { git = "https://github.com/Alzymologist/substrate-parser", default-features = false, features = ["embed-display"] }
+substrate_parser = { git = "https://github.com/Alzymologist/substrate-parser", default-features = false, features = ["embed-display"], rev = "b3b9637287b6045cefe774fc0f44b9ad297e6066" }
 thiserror = "1.0.35"
 
-kampela-common = {git = "https://github.com/Kalapaja/kampela-common"}
+kampela-common = {git = "https://github.com/Kalapaja/kampela-common", rev = "c7219c738932f98c3de52b80d1475c6a2f7f0bee"}
 lt-codes = {git = "https://github.com/Alzymologist/LT-codes"}
 rand = "0.8.4"
 
