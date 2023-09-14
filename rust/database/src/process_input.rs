@@ -10,15 +10,12 @@ use std::{
 use substrate_parser::cut_metadata::cut_metadata;
 
 use kampela_common::{
-    Bytes, DerivationInfo, Encryption, MultiSigner, SpecsValue,
-    Transaction, TransmittableContent,
+    Bytes, DerivationInfo, Encryption, MultiSigner, Transaction, TransmittableContent,
 };
-use rand::Fill;
 
 use crate::error::ErrorCompanion;
 use crate::sign_with_companion::{SignByCompanion, SignatureMaker};
-use crate::storage::{MetadataStorage, MetadataValue};
-use crate::traits::{DbStorage, FromQr, FromQrAndDb};
+use crate::storage::{MetadataStorage, SpecsStorage};
 
 pub const PREFIX_SUBSTRATE: u8 = 0x53;
 
@@ -26,6 +23,14 @@ pub const ID_SIGNABLE: &[u8] = &[0x00, 0x02];
 pub const ID_BYTES: u8 = 0x03;
 pub const ID_METADATA: u8 = 0x80;
 pub const ID_SPECS: u8 = 0xc1;
+
+pub trait FromQrAndDb: Sized {
+    fn from_payload_prelude_cut(
+        payload: &[u8],
+        encryption: &Encryption,
+        db_path: &str,
+    ) -> Result<Self, ErrorCompanion>;
+}
 
 impl FromQrAndDb for Transaction {
     fn from_payload_prelude_cut(
@@ -56,9 +61,16 @@ impl FromQrAndDb for Transaction {
                     .try_into()
                     .expect("stable known length"),
             );
-            let metadata_value = MetadataValue::read_from_db(db_path, genesis_hash)?;
+            let metadata_storage = MetadataStorage::read_from_db(db_path, genesis_hash)?;
+            let specs_storage = SpecsStorage::read_from_db(db_path, *encryption, genesis_hash)?;
             let signable_transaction = payload[..payload.len() - H256::len_bytes()].to_vec();
-            let short_metadata = cut_metadata(&signable_transaction.as_ref(), &mut (), &metadata_value.metadata).map_err(ErrorCompanion::MetaCut)?;
+            let short_metadata = cut_metadata(
+                &signable_transaction.as_ref(),
+                &mut (),
+                &metadata_storage.value,
+                &specs_storage.value.short_specs,
+            )
+            .map_err(ErrorCompanion::MetaCut)?;
             Ok(Self {
                 genesis_hash,
                 encoded_short_meta: short_metadata.encode(),
@@ -69,6 +81,13 @@ impl FromQrAndDb for Transaction {
             Err(ErrorCompanion::TooShort)
         }
     }
+}
+
+pub trait FromQr: Sized {
+    fn from_payload_prelude_cut(
+        payload: &[u8],
+        encryption: &Encryption,
+    ) -> Result<Self, ErrorCompanion>;
 }
 
 impl FromQr for Bytes {
@@ -176,24 +195,20 @@ impl Action {
                         Ok(Self::Transmit(transmittable.into_transmit()?))
                     }
                     ID_METADATA => {
-                        let metadata_storage = MetadataStorage::from_payload_prelude_cut(
-                            payload,
-                            &Encryption::Sr25519,
-                        )?;
+                        let encryption = Encryption::decode(&mut &prelude[1..2])
+                            .map_err(|_| ErrorCompanion::UnknownSigningAlgorithm(prelude[1]))?;
+                        let metadata_storage =
+                            MetadataStorage::from_payload_prelude_cut(payload, &encryption)?;
                         metadata_storage.write_in_db(db_path)?;
                         Ok(Self::Success)
                     }
                     ID_SPECS => {
                         let encryption = Encryption::decode(&mut &prelude[1..2])
                             .map_err(|_| ErrorCompanion::UnknownSigningAlgorithm(prelude[1]))?;
-                        let specs_value =
-                            SpecsValue::from_payload_prelude_cut(payload, &encryption)?;
-                        specs_value.write_in_db(db_path)?;
-                        let transmittable = Transmittable {
-                            content: TransmittableContent::Specs(specs_value),
-                            signature_maker,
-                        };
-                        Ok(Self::Transmit(transmittable.into_transmit()?))
+                        let specs_storage =
+                            SpecsStorage::from_payload_prelude_cut(payload, &encryption)?;
+                        specs_storage.write_in_db(db_path)?;
+                        Ok(Self::Success)
                     }
                     a => Err(ErrorCompanion::UnknownPayloadType(a)),
                 }
@@ -207,42 +222,9 @@ impl Action {
         has_pwd: bool,
         signature_maker: Box<dyn SignByCompanion>,
     ) -> Result<Self, ErrorCompanion> {
-        let derivation = DerivationInfo {
-            cut_path,
-            has_pwd,
-        };
+        let derivation = DerivationInfo { cut_path, has_pwd };
         let transmittable = Transmittable {
             content: TransmittableContent::Derivation(derivation),
-            signature_maker,
-        };
-        Ok(Self::Transmit(transmittable.into_transmit()?))
-    }
-
-    pub fn new_specs_set(
-        specs_values_set: Vec<Arc<SpecsValue>>,
-        signature_maker: Box<dyn SignByCompanion>,
-    ) -> Result<Self, ErrorCompanion> {
-        let specs_values = specs_values_set
-            .iter()
-            .map(|a| a.as_ref().to_owned())
-            .collect();
-        let transmittable = Transmittable {
-            content: TransmittableContent::SpecsSet(specs_values),
-            signature_maker,
-        };
-        Ok(Self::Transmit(transmittable.into_transmit()?))
-    }
-
-    pub fn new_sized_transfer(
-        length: u32,
-        signature_maker: Box<dyn SignByCompanion>,
-    ) -> Result<Self, ErrorCompanion> {
-        let mut rng = rand::thread_rng();
-        let mut msg = Vec::with_capacity(length as usize);
-        msg.try_fill(&mut rng)
-            .map_err(|_| ErrorCompanion::DataFill)?;
-        let transmittable = Transmittable {
-            content: TransmittableContent::SizedTransfer(msg.to_vec()),
             signature_maker,
         };
         Ok(Self::Transmit(transmittable.into_transmit()?))
@@ -263,28 +245,5 @@ impl Action {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    use super::*;
-
-    #[derive(Debug)]
-    struct MockSignByCompanion;
-
-    impl SignByCompanion for MockSignByCompanion {
-        fn make_signature(&self, _data: Vec<u8>) -> Vec<u8> {
-            Vec::new()
-        }
-        fn export_public_key(&self) -> Vec<u8> {
-            Vec::new()
-        }
-    }
-
-    #[test]
-    fn sized_data_test() {
-        assert!(Action::new_sized_transfer(2400, Box::new(MockSignByCompanion)).is_ok());
     }
 }
