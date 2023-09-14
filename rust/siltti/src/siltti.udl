@@ -50,6 +50,8 @@ interface Action {
     
     [Name=new_derivation, Throws=ErrorCompanion]
     constructor(string cut_path, boolean has_pwd, SignByCompanion signature_maker);
+
+    boolean is_transmit();
     
     sequence<u8>? make_packet();
 };
