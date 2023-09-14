@@ -1,21 +1,14 @@
 //! Keys and corresponding values in companion database.
-use frame_metadata::{v14::RuntimeMetadataV14, META_RESERVED, RuntimeMetadata};
+use frame_metadata::{v14::RuntimeMetadataV14, RuntimeMetadata, META_RESERVED};
 use parity_scale_codec::{Decode, Encode};
 use sled::{open, Db, IVec, Tree};
 use sp_core::H256;
-use std::{
-    convert::TryInto,
-    sync::{Arc, RwLock},
-};
-use substrate_parser::{
-    compacts::find_compact,
-    traits::AsMetadata,
-};
+use std::{convert::TryInto, sync::Arc};
+use substrate_parser::{compacts::find_compact, traits::AsMetadata, ShortSpecs};
 
-use kampela_common::{Encryption, MultiSignature, MultiSigner, Specs, SpecsKey, SpecsValue};
+use kampela_common::Encryption;
 
 use crate::error::ErrorCompanion;
-use crate::traits::{DbKey, DbStorage, FromQr};
 
 fn open_db(db_path: &str) -> Result<Db, ErrorCompanion> {
     open(db_path).map_err(ErrorCompanion::DbInternal)
@@ -38,53 +31,8 @@ pub struct MetadataKey {
     pub genesis_hash: H256,
 }
 
-impl DbKey for MetadataKey {
-    fn from_db_key(database_key: &IVec) -> Result<Self, ErrorCompanion> {
-        Self::decode(&mut &database_key[..]).map_err(|_| ErrorCompanion::DecodeDbMetadataKey)
-    }
-    fn as_db_key(&self) -> Vec<u8> {
-        self.encode()
-    }
-    fn show(&self) -> String {
-        hex::encode(self.genesis_hash)
-    }
-}
-
-#[derive(Debug, Decode, Encode)]
-pub struct MetadataValue {
-    pub metadata: RuntimeMetadataV14,
-}
-
-impl MetadataValue {
-    pub fn from_db_value(database_value: &IVec) -> Result<Self, ErrorCompanion> {
-        Self::decode(&mut &database_value[..]).map_err(|_| ErrorCompanion::DecodeDbMetadataValue)
-    }
-    pub fn try_read_from_tree(
-        metadata_tree: &Tree,
-        genesis_hash: H256,
-    ) -> Result<Option<Self>, ErrorCompanion> {
-        let metadata_key = MetadataKey { genesis_hash };
-        match metadata_tree.get(metadata_key.as_db_key()) {
-            Ok(Some(a)) => Self::from_db_value(&a).map(Some),
-            Ok(None) => Ok(None),
-            Err(e) => Err(ErrorCompanion::DbInternal(e)),
-        }
-    }
-    pub fn read_from_tree(
-        metadata_tree: &Tree,
-        genesis_hash: H256,
-    ) -> Result<Self, ErrorCompanion> {
-        match Self::try_read_from_tree(metadata_tree, genesis_hash)? {
-            Some(a) => Ok(a),
-            None => Err(ErrorCompanion::NoMetadata(genesis_hash)),
-        }
-    }
-    pub fn read_from_db(db_path: &str, genesis_hash: H256) -> Result<Self, ErrorCompanion> {
-        let database = open_db(db_path)?;
-        let metadata_tree = open_tree(&database, METADATA)?;
-        Self::read_from_tree(&metadata_tree, genesis_hash)
-    }
-    pub fn as_db_value(&self) -> Vec<u8> {
+impl MetadataKey {
+    pub fn as_db_key(&self) -> Vec<u8> {
         self.encode()
     }
 }
@@ -92,35 +40,11 @@ impl MetadataValue {
 #[derive(Debug)]
 pub struct MetadataStorage {
     pub key: MetadataKey,
-    pub value: MetadataValue,
+    pub value: RuntimeMetadataV14,
 }
 
-impl DbStorage for MetadataStorage {
-    fn from_db_entry(
-        (database_key, database_value): &(IVec, IVec),
-    ) -> Result<Self, ErrorCompanion> {
-        let key = MetadataKey::from_db_key(database_key)?;
-        let value = MetadataValue::from_db_value(database_value)?;
-        Ok(Self { key, value })
-    }
-    fn db_key(&self) -> Vec<u8> {
-        self.key.as_db_key()
-    }
-    fn db_value(&self) -> Vec<u8> {
-        self.value.as_db_value()
-    }
-    fn write_in_db(&self, db_path: &str) -> Result<(), ErrorCompanion> {
-        let database = open_db(db_path)?;
-        let metadata_tree = open_tree(&database, METADATA)?;
-        metadata_tree
-            .insert(self.key.as_db_key(), self.value.as_db_value())
-            .map_err(ErrorCompanion::DbInternal)?;
-        Ok(())
-    }
-}
-
-impl FromQr for MetadataStorage {
-    fn from_payload_prelude_cut(
+impl MetadataStorage {
+    pub fn from_payload_prelude_cut(
         payload: &[u8],
         encryption: &Encryption,
     ) -> Result<Self, ErrorCompanion> {
@@ -147,7 +71,7 @@ impl FromQr for MetadataStorage {
                             H256(hash_slice.try_into().expect("stable known length"));
                         Ok(Self {
                             key: MetadataKey { genesis_hash },
-                            value: MetadataValue { metadata },
+                            value: metadata,
                         })
                     }
                     None => Err(ErrorCompanion::TooShort),
@@ -156,301 +80,245 @@ impl FromQr for MetadataStorage {
             None => Err(ErrorCompanion::TooShort),
         }
     }
+
+    pub fn write_in_db(&self, db_path: &str) -> Result<(), ErrorCompanion> {
+        let database = open_db(db_path)?;
+        let metadata_tree = open_tree(&database, METADATA)?;
+        metadata_tree
+            .insert(self.key.as_db_key(), self.value.encode())
+            .map_err(ErrorCompanion::DbInternal)?;
+        Ok(())
+    }
+
+    pub fn read_from_tree(
+        metadata_tree: &Tree,
+        genesis_hash: H256,
+    ) -> Result<Self, ErrorCompanion> {
+        let metadata_key = MetadataKey { genesis_hash };
+        match metadata_tree.get(metadata_key.as_db_key()) {
+            Ok(Some(encoded_meta_slice)) => {
+                let value = RuntimeMetadataV14::decode(&mut &encoded_meta_slice[..])
+                    .map_err(|_| ErrorCompanion::DecodeDbMetadataValue)?;
+                Ok(Self {
+                    key: metadata_key,
+                    value,
+                })
+            }
+            Ok(None) => Err(ErrorCompanion::NoMetadata(genesis_hash)),
+            Err(e) => Err(ErrorCompanion::DbInternal(e)),
+        }
+    }
+
+    pub fn read_from_db(db_path: &str, genesis_hash: H256) -> Result<Self, ErrorCompanion> {
+        let database = open_db(db_path)?;
+        let metadata_tree = open_tree(&database, METADATA)?;
+        Self::read_from_tree(&metadata_tree, genesis_hash)
+    }
 }
 
-impl DbKey for SpecsKey {
-    fn from_db_key(database_key: &IVec) -> Result<Self, ErrorCompanion> {
+#[derive(Clone, Debug, Decode, Encode, Eq, PartialEq)]
+pub struct SpecsKey {
+    pub encryption: Encryption,
+    pub genesis_hash: H256,
+}
+
+impl SpecsKey {
+    pub fn from_db_key(database_key: &IVec) -> Result<Self, ErrorCompanion> {
         Self::decode(&mut &database_key[..]).map_err(|_| ErrorCompanion::DecodeDbSpecsKey)
     }
-    fn as_db_key(&self) -> Vec<u8> {
+    pub fn as_db_key(&self) -> Vec<u8> {
         self.encode()
     }
-    fn show(&self) -> String {
+    pub fn show(&self) -> String {
         hex::encode(self.as_db_key())
     }
 }
 
-impl DbStorage for SpecsValue {
-    fn from_db_entry(
-        (database_key, database_value): &(IVec, IVec),
-    ) -> Result<Self, ErrorCompanion> {
-        let key = SpecsKey::from_db_key(database_key)?;
-        let value = Self::decode(&mut &database_value[..])
-            .map_err(|_| ErrorCompanion::DecodeDbSpecsValue)?;
-        if value.specs.encryption != key.encryption {
-            return Err(ErrorCompanion::DbSpecsEncryptionMismatch {
-                key: key.encryption,
-                value: value.specs.encryption,
-            });
-        }
-        if value.specs.genesis_hash != key.genesis_hash {
-            return Err(ErrorCompanion::DbSpecsHashMismatch {
-                key: key.genesis_hash,
-                value: value.specs.genesis_hash,
-            });
-        }
-        Ok(value)
-    }
-    fn db_key(&self) -> Vec<u8> {
-        SpecsKey {
-            encryption: self.specs.encryption,
-            genesis_hash: self.specs.genesis_hash,
-        }
-        .as_db_key()
-    }
-    fn db_value(&self) -> Vec<u8> {
-        self.encode()
-    }
-    fn write_in_db(&self, db_path: &str) -> Result<(), ErrorCompanion> {
-        let database = open_db(db_path)?;
-        let specs_tree = open_tree(&database, SPECS)?;
-        specs_tree
-            .insert(self.db_key(), self.db_value())
-            .map_err(ErrorCompanion::DbInternal)?;
-        Ok(())
-    }
+#[derive(Clone, Debug, Decode, Encode, Eq, PartialEq)]
+pub struct SpecsUpstream {
+    pub base58prefix: u16,
+    pub color: String,
+    pub decimals: u8,
+    pub encryption: Encryption,
+    pub genesis_hash: H256,
+    pub logo: String,
+    pub name: String,
+    pub path_id: String,
+    pub secondary_color: String,
+    pub title: String,
+    pub unit: String,
 }
 
-impl FromQr for SpecsValue {
-    fn from_payload_prelude_cut(
+#[derive(Clone, Debug, Decode, Encode)]
+pub struct SpecsValue {
+    pub short_specs: ShortSpecs,
+    pub title: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct SpecsStorage {
+    pub key: SpecsKey,
+    pub value: SpecsValue,
+}
+
+impl SpecsStorage {
+    pub fn from_payload_prelude_cut(
         payload: &[u8],
         encryption: &Encryption,
     ) -> Result<Self, ErrorCompanion> {
-        let mut position = 0;
-        let specs_signer = match payload.get(position..position + encryption.key_length()) {
-            Some(public_key_slice) => {
-                position += encryption.key_length();
-                match encryption {
-                    Encryption::Ed25519 => MultiSigner::Ed25519(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                    Encryption::Sr25519 => MultiSigner::Sr25519(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                    Encryption::Ecdsa => MultiSigner::Ecdsa(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                }
-            }
-            None => return Err(ErrorCompanion::TooShort),
-        };
+        let mut position = encryption.key_length();
         let length_info = find_compact::<u32, _, _>(&payload, &mut (), position)
             .map_err(|_| ErrorCompanion::SpecsQrUnexpectedStructure)?;
         let encoded_specs_length = length_info.compact as usize;
         position = length_info.start_next_unit;
         match payload.get(position..position + encoded_specs_length) {
             Some(encoded_specs_slice) => {
-                let specs = Specs::decode(&mut &encoded_specs_slice[..])
+                let specs_upstream = SpecsUpstream::decode(&mut &encoded_specs_slice[..])
                     .map_err(|_| ErrorCompanion::SpecsQrDecode)?;
-                position += encoded_specs_length;
-                match payload.get(position..position + encryption.signature_length()) {
-                    Some(signature_slice) => {
-                        let specs_signature = match encryption {
-                            Encryption::Ed25519 => MultiSignature::Ed25519(
-                                signature_slice.try_into().expect("stable known length"),
-                            ),
-                            Encryption::Sr25519 => MultiSignature::Sr25519(
-                                signature_slice.try_into().expect("stable known length"),
-                            ),
-                            Encryption::Ecdsa => MultiSignature::Ecdsa(
-                                signature_slice.try_into().expect("stable known length"),
-                            ),
-                        };
-                        Ok(Self {
-                            specs,
-                            specs_signer,
-                            specs_signature,
-                        })
-                    }
-                    None => Err(ErrorCompanion::TooShort),
-                }
+                Ok(Self {
+                    key: SpecsKey {
+                        encryption: specs_upstream.encryption,
+                        genesis_hash: specs_upstream.genesis_hash,
+                    },
+                    value: SpecsValue {
+                        short_specs: ShortSpecs {
+                            base58prefix: specs_upstream.base58prefix,
+                            decimals: specs_upstream.decimals,
+                            unit: specs_upstream.unit,
+                        },
+                        title: specs_upstream.title,
+                    },
+                })
             }
             None => Err(ErrorCompanion::TooShort),
+        }
+    }
+
+    pub fn write_in_db(&self, db_path: &str) -> Result<(), ErrorCompanion> {
+        let database = open_db(db_path)?;
+        let specs_tree = open_tree(&database, SPECS)?;
+        specs_tree
+            .insert(self.key.as_db_key(), self.value.encode())
+            .map_err(ErrorCompanion::DbInternal)?;
+        Ok(())
+    }
+
+    pub fn read_from_db(
+        db_path: &str,
+        encryption: Encryption,
+        genesis_hash: H256,
+    ) -> Result<Self, ErrorCompanion> {
+        let database = open_db(db_path)?;
+        let specs_tree = open_tree(&database, SPECS)?;
+        let specs_key = SpecsKey {
+            encryption,
+            genesis_hash,
+        };
+        match specs_tree.get(specs_key.as_db_key()) {
+            Ok(Some(database_value)) => {
+                let value = SpecsValue::decode(&mut &database_value[..])
+                    .map_err(|_| ErrorCompanion::DecodeDbSpecsValue)?;
+                Ok(Self {
+                    key: specs_key,
+                    value,
+                })
+            }
+            Ok(None) => Err(ErrorCompanion::NoSpecs {
+                encryption,
+                genesis_hash,
+            }),
+            Err(e) => Err(ErrorCompanion::DbInternal(e)),
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct SpecsSelectorElement {
-    key: SpecsKey,
-    value: SpecsValue,
-    is_selected: bool,
+pub struct SpecsDisplayElement {
+    specs_key: SpecsKey,
+    specs_value: SpecsValue,
     metadata_version: Option<String>,
 }
 
-impl SpecsSelectorElement {
+impl SpecsDisplayElement {
     fn from_entry(
-        database_entry: (IVec, IVec),
+        (specs_key_slice, specs_value_slice): (IVec, IVec),
         metadata_tree: &Tree,
     ) -> Result<Self, ErrorCompanion> {
-        let value = SpecsValue::from_db_entry(&database_entry)?;
-        let key = SpecsKey {
-            encryption: value.specs.encryption,
-            genesis_hash: value.specs.genesis_hash,
-        };
-        let metadata_version =
-            match MetadataValue::try_read_from_tree(metadata_tree, key.genesis_hash)? {
-                Some(metadata_value) => Some(
-                    <RuntimeMetadataV14 as AsMetadata<()>>::version_printed(
-                        &metadata_value.metadata,
+        let specs_key = SpecsKey::from_db_key(&specs_key_slice)?;
+        let specs_value = SpecsValue::decode(&mut &specs_value_slice[..])
+            .map_err(|_| ErrorCompanion::DecodeDbSpecsValue)?;
+        let metadata_version = {
+            if let Ok(metadata_storage) =
+                MetadataStorage::read_from_tree(metadata_tree, specs_key.genesis_hash)
+            {
+                Some(
+                    <RuntimeMetadataV14 as AsMetadata<()>>::spec_name_version(
+                        &metadata_storage.value,
                     )
-                    .map_err(ErrorCompanion::MetadataVersion)?,
-                ),
-                None => None,
-            };
+                    .map_err(ErrorCompanion::MetadataVersion)?
+                    .printed_spec_version,
+                )
+            } else {
+                None
+            }
+        };
         Ok(Self {
-            key,
-            value,
-            is_selected: false,
+            specs_key,
+            specs_value,
             metadata_version,
         })
     }
-    fn toggle(&mut self) {
-        self.is_selected = !self.is_selected;
-    }
-    fn make_selected(&mut self) {
-        self.is_selected = true;
-    }
-    fn make_deselected(&mut self) {
-        self.is_selected = false;
-    }
     fn title(&self) -> String {
-        self.value.specs.title.to_owned()
+        self.specs_value.title.to_owned()
     }
     fn version(&self) -> Option<String> {
         self.metadata_version.to_owned()
     }
-    fn is_selected(&self) -> bool {
-        self.is_selected
-    }
-    fn key(&self) -> SpecsKey {
-        self.key.to_owned()
-    }
-    fn value(&self) -> SpecsValue {
-        self.value.to_owned()
-    }
 }
 
 #[derive(Debug)]
-pub struct SpecsSelector {
-    selector: RwLock<Vec<SpecsSelectorElement>>,
+pub struct SpecsDisplay {
+    display: Vec<SpecsDisplayElement>,
 }
 
-impl SpecsSelector {
+impl SpecsDisplay {
     pub fn new(db_path: &str) -> Result<Self, ErrorCompanion> {
         let database = open_db(db_path)?;
         let specs_tree = open_tree(&database, SPECS)?;
         let metadata_tree = open_tree(&database, METADATA)?;
-        let mut selector: Vec<SpecsSelectorElement> = Vec::new();
+        let mut display: Vec<SpecsDisplayElement> = Vec::new();
         for x in specs_tree.iter().flatten() {
-            selector.push(SpecsSelectorElement::from_entry(x, &metadata_tree)?)
+            display.push(SpecsDisplayElement::from_entry(x, &metadata_tree)?)
         }
-        Ok(Self {
-            selector: RwLock::new(selector),
-        })
+        Ok(Self { display })
     }
-    pub fn get_all_keys(&self) -> Result<Vec<Arc<SpecsKey>>, ErrorCompanion> {
-        let selector = self
-            .selector
-            .read()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
-        Ok(selector.iter().map(|a| Arc::new(a.key())).collect())
-    }
-    pub fn collect_selected_keys(&self) -> Result<Vec<Arc<SpecsKey>>, ErrorCompanion> {
-        let selector = self
-            .selector
-            .read()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
-        Ok(selector
+
+    pub fn get_all_keys(&self) -> Vec<Arc<SpecsKey>> {
+        self.display
             .iter()
-            .filter(|a| a.is_selected())
-            .map(|a| Arc::new(a.key()))
-            .collect())
+            .map(|a| Arc::new(a.specs_key.to_owned()))
+            .collect()
     }
-    pub fn collect_selected_values(&self) -> Result<Vec<Arc<SpecsValue>>, ErrorCompanion> {
-        let selector = self
-            .selector
-            .read()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
-        Ok(selector
-            .iter()
-            .filter(|a| a.is_selected())
-            .map(|a| Arc::new(a.value()))
-            .collect())
-    }
+
     pub fn title(&self, key: &SpecsKey) -> Result<Option<String>, ErrorCompanion> {
-        let selector = self
-            .selector
-            .read()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
         let mut title = None;
-        for element in selector.iter() {
-            if &element.key() == key {
+        for element in self.display.iter() {
+            if &element.specs_key == key {
                 title = Some(element.title());
                 break;
             }
         }
         Ok(title)
     }
+
     pub fn version(&self, key: &SpecsKey) -> Result<Option<String>, ErrorCompanion> {
-        let selector = self
-            .selector
-            .read()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
         let mut version = None;
-        for element in selector.iter() {
-            if &element.key() == key {
+        for element in self.display.iter() {
+            if &element.specs_key == key {
                 version = element.version();
                 break;
             }
         }
         Ok(version)
-    }
-    pub fn is_selected(&self, key: &SpecsKey) -> Result<Option<bool>, ErrorCompanion> {
-        let selector = self
-            .selector
-            .read()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
-        let mut title = None;
-        for element in selector.iter() {
-            if &element.key() == key {
-                title = Some(element.is_selected());
-                break;
-            }
-        }
-        Ok(title)
-    }
-    pub fn toggle(self: &Arc<Self>, key: &SpecsKey) -> Result<(), ErrorCompanion> {
-        let mut selector = self
-            .selector
-            .write()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
-        for element in selector.iter_mut() {
-            if &element.key() == key {
-                element.toggle();
-                break;
-            }
-        }
-        Ok(())
-    }
-    pub fn select_all(self: &Arc<Self>) -> Result<(), ErrorCompanion> {
-        let mut selector = self
-            .selector
-            .write()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
-        for element in selector.iter_mut() {
-            element.make_selected()
-        }
-        Ok(())
-    }
-    pub fn deselect_all(self: &Arc<Self>) -> Result<(), ErrorCompanion> {
-        let mut selector = self
-            .selector
-            .write()
-            .map_err(|_| ErrorCompanion::PoisonedLock)?;
-        for element in selector.iter_mut() {
-            element.make_deselected()
-        }
-        Ok(())
     }
 }

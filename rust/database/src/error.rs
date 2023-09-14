@@ -6,17 +6,8 @@ use kampela_common::Encryption;
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ErrorCompanion {
-    #[error("Cannot fill mock transfer data.")]
-    DataFill,
-
     #[error("Internal database error: {0}")]
     DbInternal(sled::Error),
-
-    #[error("Mismatch in encryption in specs storage.")]
-    DbSpecsEncryptionMismatch { key: Encryption, value: Encryption },
-
-    #[error("Mismatch in genesis hash in specs storage.")]
-    DbSpecsHashMismatch { key: H256, value: H256 },
 
     #[error("Metadata storage key got damaged in the database and could not be decoded.")]
     DecodeDbMetadataKey,
@@ -51,14 +42,17 @@ pub enum ErrorCompanion {
     #[error("Metadata from scanned QR does not start with expected b`meta` prefix.")]
     NoMetaPrefixQr,
 
+    #[error("No specs entries for encryption {} and genesis hash {} in the database.", encryption, hex::encode(genesis_hash.0))]
+    NoSpecs {
+        encryption: Encryption,
+        genesis_hash: H256,
+    },
+
     #[error("Received QR payload is not a Substrate one.")]
     NotSubstrate,
 
     #[error("Metadata in received QR payload is not V14 and is not supported.")]
     OnlyV14SupportedQr,
-
-    #[error("Poisoned lock on uniffi interface.")]
-    PoisonedLock,
 
     #[error("Specs from scanned QR could not be decoded.")]
     SpecsQrDecode,
