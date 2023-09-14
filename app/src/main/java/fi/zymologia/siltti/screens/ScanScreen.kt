@@ -122,12 +122,12 @@ fun ScanScreen(
                                     dbName,
                                     barcodeScanner,
                                     imageProxy,
-                                    { transmittable: Action? ->
+                                    { transmittable: Action ->
                                         transmitCallback(
                                             transmittable,
                                         )
 
-                                        if (transmittable == null ) {
+                                        if (!transmittable.isTransmit()) {
                                             Toast
                                                 .makeText(
                                                     context,
@@ -208,33 +208,6 @@ fun ScanScreen(
             ) {
                 Text("Create an address")
             }
-
-            Text("Dummy payload tools")
-            TextField(
-                value = dummyLength.value.toString(),
-                onValueChange = { new: String ->
-                    Log.d("dummy input", new)
-                    dummyLength.value = try {
-                        new.trim().toUInt()
-                    } catch (_: java.lang.NumberFormatException) {
-                        3000u
-                    }
-                    Log.d("dummy", dummyLength.value.toString())
-                },
-                label = { Text("number of payloads") },
-            )
-            Button(
-                onClick = {
-                    Log.d("dummy used", dummyLength.value.toString())
-                    val action = Action.newSizedTransfer(dummyLength.value, Signer())
-                    Log.d("dummy action", action.toString())
-                    transmitCallback(action)
-                    cameraProviderFuture.get().unbindAll()
-                    setAppState(Mode.TX)
-                },
-            ) {
-                Text("Send dummy payload")
-            }
         }
     }
 }
@@ -250,7 +223,7 @@ fun processFrame(
     dbName: String,
     barcodeScanner: BarcodeScanner,
     imageProxy: ImageProxy,
-    startTransmission: (Action?) -> Unit,
+    startTransmission: (Action) -> Unit,
     submitFrame: (List<UByte>) -> Payload,
     refreshFrames: () -> Unit,
     clean: () -> Unit,

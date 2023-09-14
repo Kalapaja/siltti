@@ -9,9 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import fi.zymologia.siltti.Mode
 import fi.zymologia.siltti.Signer
-import fi.zymologia.siltti.components.NetworkCard
 import fi.zymologia.siltti.uniffi.Action
-import fi.zymologia.siltti.uniffi.SpecsSelector
 
 @Composable
 fun NewAddress(
@@ -21,7 +19,6 @@ fun NewAddress(
 ) {
     var address by remember { mutableStateOf("") }
     var hasPwd by remember { mutableStateOf(false) }
-    val selector = remember { mutableStateOf(SpecsSelector(dbName)) }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -31,22 +28,13 @@ fun NewAddress(
             value = address,
             onValueChange = { address = it },
         )
-        Text("Select networks")
-        LazyColumn {
-            this.items(
-                items = selector.value.getAllKeys(),
-                key = { it.toString() },
-            ) { key ->
-                NetworkCard(selector, key)
-            }
-        }
+
         Row(
             horizontalArrangement = Arrangement.SpaceEvenly,
             modifier = Modifier.fillMaxWidth(1f),
         ) {
             Button(
                 onClick = {
-                    val selected = selector.value.collectSelectedKeys()
                     transmitCallback(Action.newDerivation(address, hasPwd, Signer()))
                     setAppState(Mode.TX)
                 },

@@ -230,6 +230,10 @@ impl Action {
         Ok(Self::Transmit(transmittable.into_transmit()?))
     }
 
+    pub fn is_transmit(&self) -> bool {
+        if let Action::Transmit(_) = self { true } else { false }
+    }
+
     pub fn make_packet(self: &Arc<Self>) -> Option<Vec<u8>> {
         match self.as_ref() {
             Action::Success => None,
