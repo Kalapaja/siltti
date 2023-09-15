@@ -43,6 +43,7 @@ import fi.zymologia.siltti.*
 import fi.zymologia.siltti.components.NetworkCard
 import fi.zymologia.siltti.components.ScanProgressBar
 import fi.zymologia.siltti.uniffi.*
+import fi.zymologia.siltti.uniffi.Action.Companion.newKampelaStop
 import fi.zymologia.siltti.uniffi.Collection
 
 @Composable
@@ -220,6 +221,17 @@ fun ScanScreen(
             key = { it.toString() },
         ) { key ->
             NetworkCard(networks, key)
+        }
+        item {
+            Button(
+                onClick = {
+                    transmitCallback(newKampelaStop(Signer()))
+                    cameraProviderFuture.get().unbindAll()
+                    setAppState(Mode.TX)
+                },
+            ) {
+                Text("Send blank payloads")
+            }
         }
     }
 }
