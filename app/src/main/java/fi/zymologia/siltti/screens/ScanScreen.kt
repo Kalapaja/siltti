@@ -71,6 +71,8 @@ fun ScanScreen(
 
     val networks = remember { mutableStateOf(SpecsDisplay(dbName)) }
 
+    val error = remember { mutableStateOf("") }
+
     if (frames.value != null) {
         KeepScreenOn()
     }
@@ -147,14 +149,11 @@ fun ScanScreen(
                                                 try {
                                                     frames.value = collection.frames()
                                                 } catch (e: ErrorQr) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "QR scanner error: " + e.message,
-                                                        Toast.LENGTH_SHORT,
-                                                    ).show()
+                                                    error.value = "QR scanner error: " + e.message
                                                 }
                                             },
                                             collection::clean,
+                                            { error.value = it },
                                         )
                                     }
                                 }
@@ -189,12 +188,7 @@ fun ScanScreen(
                                 collection.clean()
                                 frames.value = collection.frames()
                             } catch (e: ErrorQr) {
-                                Toast
-                                    .makeText(
-                                        context,
-                                        "QR scanner reset error: " + e.message,
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
+                                error.value = "QR scanner reset error: " + e.message
                             }
                         },
                     )
@@ -207,6 +201,15 @@ fun ScanScreen(
                     ) {
                         Text("Create an address")
                     }
+                    if (error.value.isNotBlank()) {
+                        Text(error.value)
+                        Button(
+                            onClick = { error.value = "" },
+                        ) {
+                            Text("dismiss error")
+                        }
+                    }
+                    Text("")
                     Text("Available networks", style = MaterialTheme.typography.h4)
                     Text("Scan first network specs and then metadata to add more networks")
                 }
@@ -236,6 +239,7 @@ fun processFrame(
     submitFrame: (List<UByte>) -> Payload,
     refreshFrames: () -> Unit,
     clean: () -> Unit,
+    setError: (String) -> Unit,
 ) {
     if (imageProxy.image == null) return
     val inputImage = InputImage.fromMediaImage(
@@ -250,11 +254,7 @@ fun processFrame(
                     try {
                         submitFrame(payload)
                     } catch (e: ErrorQr) {
-                        Toast.makeText(
-                            context,
-                            "QR parser error: " + e.message,
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        setError("QR parser error: " + e.message)
                         clean()
                         null
                     }
@@ -267,11 +267,7 @@ fun processFrame(
                         val action = Action.newPayload(payload, dbName, Signer())
                         startTransmission(action)
                     } catch (e: ErrorCompanion) {
-                        Toast.makeText(
-                            context,
-                            "Payload parsing error: " + e.message,
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        setError("Payload parsing error: " + e.message)
                     }
                 }
                 refreshFrames()
