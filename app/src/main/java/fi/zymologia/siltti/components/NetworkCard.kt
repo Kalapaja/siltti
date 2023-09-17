@@ -14,37 +14,30 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import fi.zymologia.siltti.uniffi.SpecsDisplay
 import fi.zymologia.siltti.uniffi.SpecsKey
 
-/*
+
 @Composable
 fun NetworkCard(
-    selector: MutableState<SpecsSelector>,
+    networks: MutableState<SpecsDisplay>,
     key: SpecsKey
 ) {
-    var isSelected by remember { mutableStateOf(selector.value.isSelected(key) == true) }
-
     Surface(
-        color = if (isSelected) MaterialTheme.colors.primary else MaterialTheme.colors.secondary,
+        color = MaterialTheme.colors.primary,
         modifier = Modifier
             .fillMaxWidth()
             .padding(10.dp)
-            .clickable {
-                selector.value.toggle(key)
-                isSelected = selector.value.isSelected(key) == true
-            }
     ) {
         Row(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.padding(10.dp)
         ) {
             Text(
-                selector.value.title(key) ?: "unknown",
-                color = if (isSelected) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSecondary
+                networks.value.title(key) ?: "unknown",
+                color = MaterialTheme.colors.onPrimary
             )
-            Text("Version: " + (selector.value.version(key) ?: "unknown"))
-            if (isSelected) Icon(Icons.Default.CheckCircle, "selected") else Icon(Icons.Default.AddCircle, "not selected")
+            Text("Version: " + (networks.value.version(key) ?: "metadata unknown"))
         }
     }
 }
-*/

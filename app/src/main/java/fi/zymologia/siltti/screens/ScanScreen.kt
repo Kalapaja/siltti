@@ -18,13 +18,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.Button
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
-import androidx.compose.material.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,8 +40,10 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import fi.zymologia.siltti.*
+import fi.zymologia.siltti.components.NetworkCard
 import fi.zymologia.siltti.components.ScanProgressBar
 import fi.zymologia.siltti.uniffi.*
+import fi.zymologia.siltti.uniffi.Action.Companion.newKampelaStop
 import fi.zymologia.siltti.uniffi.Collection
 
 @Composable
@@ -69,144 +70,167 @@ fun ScanScreen(
     val cameraProviderFuture =
         remember { ProcessCameraProvider.getInstance(context) }
 
-    val dummyLength = remember { mutableStateOf(3000u) }
+    val networks = remember { mutableStateOf(SpecsDisplay(dbName)) }
+
+    val error = remember { mutableStateOf("") }
 
     if (frames.value != null) {
         KeepScreenOn()
     }
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-    ) {
-        AndroidView(
-            factory = { context ->
-                val executor = ContextCompat.getMainExecutor(context)
-                val previewView = PreviewView(context)
-                // mlkit docs: The default option is not recommended because it tries
-                // to scan all barcode formats, which is slow.
-                //
-                // In fact, it is not slow at all, no measurable difference was
-                // observed, but this avoids extra barcodes being accidentally scanned
-                // during multiframes.
-                val options = BarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+    LazyColumn {
+        item {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                AndroidView(
+                    factory = { context ->
+                        val executor = ContextCompat.getMainExecutor(context)
+                        val previewView = PreviewView(context)
+                        // mlkit docs: The default option is not recommended because it tries
+                        // to scan all barcode formats, which is slow.
+                        //
+                        // In fact, it is not slow at all, no measurable difference was
+                        // observed, but this avoids extra barcodes being accidentally scanned
+                        // during multiframes.
+                        val options = BarcodeScannerOptions.Builder()
+                            .setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
 
-                val barcodeScanner = BarcodeScanning.getClient(options)
+                        val barcodeScanner = BarcodeScanning.getClient(options)
 
-                // This might be done more elegantly, if needed.
-                // But it's pretty obvious that the app needs camera
-                // and why; also it just works so far and code is tiny.
-                handleCameraPermissions(context.getActivity())
+                        // This might be done more elegantly, if needed.
+                        // But it's pretty obvious that the app needs camera
+                        // and why; also it just works so far and code is tiny.
+                        handleCameraPermissions(context.getActivity())
 
-                cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
+                        cameraProviderFuture.addListener({
+                            val cameraProvider = cameraProviderFuture.get()
 
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-
-                    val cameraSelector = CameraSelector.Builder()
-                        .requireLensFacing(CameraSelector.LENS_FACING_BACK)
-                        .build()
-
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                        .apply {
-                            setAnalyzer(executor) { imageProxy ->
-                                processFrame(
-                                    context,
-                                    dbName,
-                                    barcodeScanner,
-                                    imageProxy,
-                                    { transmittable: Action ->
-                                        transmitCallback(
-                                            transmittable,
-                                        )
-
-                                        if (!transmittable.isTransmit()) {
-                                            Toast
-                                                .makeText(
-                                                    context,
-                                                    "payload accepted",
-                                                    Toast.LENGTH_SHORT,
-                                                ).show()
-                                        } else {
-                                            // Thanks to very smart electrical engineers in certain
-                                            // smartphone companies,
-                                            // NFC stops working when camera is on sometimes.
-                                            // This is too funny to be true but here we are.
-                                            cameraProvider.unbindAll()
-                                            setAppState(Mode.TX)
-                                        }
-                                    },
-                                    collection::processFrame,
-                                    {
-                                        try {
-                                            frames.value = collection.frames()
-                                        } catch (e: ErrorQr) {
-                                            Toast.makeText(
-                                                context,
-                                                "QR scanner error: " + e.message,
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    },
-                                    collection::clean,
-                                )
+                            val preview = Preview.Builder().build().also {
+                                it.setSurfaceProvider(previewView.surfaceProvider)
                             }
-                        }
 
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        imageAnalysis,
-                        preview,
-                    )
-                }, executor)
-                previewView
-            },
-            Modifier
-                .padding(bottom = 24.dp)
-                .border(
-                    BorderStroke(1.dp, MaterialTheme.colors.primary),
-                    RoundedCornerShape(8.dp),
+                            val cameraSelector = CameraSelector.Builder()
+                                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                                .build()
+
+                            val imageAnalysis = ImageAnalysis.Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .build()
+                                .apply {
+                                    setAnalyzer(executor) { imageProxy ->
+                                        processFrame(
+                                            context,
+                                            dbName,
+                                            barcodeScanner,
+                                            imageProxy,
+                                            { transmittable: Action ->
+                                                transmitCallback(
+                                                    transmittable,
+                                                )
+
+                                                if (!transmittable.isTransmit()) {
+                                                    Toast
+                                                        .makeText(
+                                                            context,
+                                                            "payload accepted",
+                                                            Toast.LENGTH_SHORT,
+                                                        ).show()
+                                                } else {
+                                                    // Thanks to very smart electrical engineers in certain
+                                                    // smartphone companies,
+                                                    // NFC stops working when camera is on sometimes.
+                                                    // This is too funny to be true but here we are.
+                                                    cameraProvider.unbindAll()
+                                                    setAppState(Mode.TX)
+                                                }
+                                            },
+                                            collection::processFrame,
+                                            {
+                                                try {
+                                                    frames.value = collection.frames()
+                                                } catch (e: ErrorQr) {
+                                                    error.value = "QR scanner error: " + e.message
+                                                }
+                                            },
+                                            collection::clean,
+                                            { error.value = it },
+                                        )
+                                    }
+                                }
+
+                            cameraProvider.unbindAll()
+                            cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                cameraSelector,
+                                imageAnalysis,
+                                preview,
+                            )
+                        }, executor)
+                        previewView
+                    },
+                    Modifier
+                        .padding(bottom = 24.dp)
+                        .border(
+                            BorderStroke(1.dp, MaterialTheme.colors.primary),
+                            RoundedCornerShape(8.dp),
+                        )
+                        .clip(RoundedCornerShape(8.dp)),
                 )
-                .clip(RoundedCornerShape(8.dp)),
-        )
 
-        Column(
-            verticalArrangement = Arrangement.Bottom,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            ScanProgressBar(
-                frames = frames,
-                resetScan = {
-                    try {
-                        collection.clean()
-                        frames.value = collection.frames()
-                    } catch (e: ErrorQr) {
-                        Toast
-                            .makeText(
-                                context,
-                                "QR scanner reset error: " + e.message,
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                Column(
+                    verticalArrangement = Arrangement.Bottom,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    ScanProgressBar(
+                        frames = frames,
+                        resetScan = {
+                            try {
+                                collection.clean()
+                                frames.value = collection.frames()
+                            } catch (e: ErrorQr) {
+                                error.value = "QR scanner reset error: " + e.message
+                            }
+                        },
+                    )
+                    Button(
+                        onClick = {
+                            transmitCallback(null)
+                            cameraProviderFuture.get().unbindAll()
+                            setAppState(Mode.Address)
+                        },
+                    ) {
+                        Text("Create an address")
                     }
-                },
-            )
+                    if (error.value.isNotBlank()) {
+                        Text(error.value)
+                        Button(
+                            onClick = { error.value = "" },
+                        ) {
+                            Text("dismiss error")
+                        }
+                    }
+                    Text("")
+                    Text("Available networks", style = MaterialTheme.typography.h4)
+                    Text("Scan first network specs and then metadata to add more networks")
+                }
+            }
+        }
+        this.items(
+            items = networks.value.getAllKeys(),
+            key = { it.toString() },
+        ) { key ->
+            NetworkCard(networks, key)
+        }
+        item {
             Button(
                 onClick = {
-                    transmitCallback(null)
+                    transmitCallback(newKampelaStop(Signer()))
                     cameraProviderFuture.get().unbindAll()
-                    setAppState(Mode.Address)
+                    setAppState(Mode.TX)
                 },
             ) {
-                Text("Create an address")
+                Text("Send blank payloads")
             }
         }
     }
@@ -227,6 +251,7 @@ fun processFrame(
     submitFrame: (List<UByte>) -> Payload,
     refreshFrames: () -> Unit,
     clean: () -> Unit,
+    setError: (String) -> Unit,
 ) {
     if (imageProxy.image == null) return
     val inputImage = InputImage.fromMediaImage(
@@ -241,11 +266,7 @@ fun processFrame(
                     try {
                         submitFrame(payload)
                     } catch (e: ErrorQr) {
-                        Toast.makeText(
-                            context,
-                            "QR parser error: " + e.message,
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        setError("QR parser error: " + e.message)
                         clean()
                         null
                     }
@@ -258,11 +279,7 @@ fun processFrame(
                         val action = Action.newPayload(payload, dbName, Signer())
                         startTransmission(action)
                     } catch (e: ErrorCompanion) {
-                        Toast.makeText(
-                            context,
-                            "Payload parsing error: " + e.message,
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        setError("Payload parsing error: " + e.message)
                     }
                 }
                 refreshFrames()
