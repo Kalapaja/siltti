@@ -1,9 +1,14 @@
 #![deny(unused_crate_dependencies)]
-#![deny(rustdoc::broken_intra_doc_links)]
-#![allow(clippy::let_unit_value)]
+//#![deny(rustdoc::broken_intra_doc_links)]
 
-mod ffi_types;
+pub mod database;
+pub mod definitions;
+pub mod error;
+pub mod fetch;
+pub mod process_input;
+pub mod sign_with_companion;
+#[cfg(test)]
+mod tests;
+pub mod utils;
 
-use crate::ffi_types::*;
-
-include!(concat!(env!("OUT_DIR"), "/siltti.uniffi.rs"));
+uniffi::setup_scaffolding!();

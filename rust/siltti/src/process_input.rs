@@ -1,57 +1,38 @@
 //! Basic processing of QR inputs.
-
+use frame_metadata::v15::RuntimeMetadataV15;
 use lt_codes::mock_worst_case::Encoder;
-use parity_scale_codec::{Decode, Encode};
-use sp_core::H256;
+use metadata_shortener::{cutter::cut_metadata, traits::Blake3Leaf, MetadataDescriptor};
+use parity_scale_codec::Encode;
+use primitive_types::H256;
 use std::{
     convert::TryInto,
     sync::{Arc, RwLock},
 };
-use substrate_parser::cut_metadata::cut_metadata;
+use substrate_crypto_light::sr25519::{PUBLIC_LEN, Public};
+use substrate_parser::{error::SignableError, parse_transaction};
 
-use kampela_common::{
-    Bytes, DerivationInfo, Encryption, MultiSigner, Transaction, TransmittableContent,
+use crate::database::{ValueMetadata, ValueSpecs};
+use crate::definitions::{
+    Bytes, DerivationInfo, MetadataSet, Transaction, TransmittableContent,
 };
-
 use crate::error::ErrorCompanion;
 use crate::sign_with_companion::{SignByCompanion, SignatureMaker};
-use crate::storage::{MetadataStorage, SpecsStorage};
 
 pub const PREFIX_SUBSTRATE: u8 = 0x53;
 
 pub const ID_SIGNABLE: &[u8] = &[0x00, 0x02];
 pub const ID_BYTES: u8 = 0x03;
-pub const ID_METADATA: u8 = 0x80;
-pub const ID_SPECS: u8 = 0xc1;
+pub const ENCRYPTION_SR25519: u8 = 0x01;
 
-pub trait FromQrAndDb: Sized {
-    fn from_payload_prelude_cut(
-        payload: &[u8],
-        encryption: &Encryption,
-        db_path: &str,
-    ) -> Result<Self, ErrorCompanion>;
-}
-
-impl FromQrAndDb for Transaction {
-    fn from_payload_prelude_cut(
+impl Transaction {
+    pub fn from_payload_prelude_cut(
         mut payload: &[u8],
-        encryption: &Encryption,
         db_path: &str,
     ) -> Result<Self, ErrorCompanion> {
-        let signer = match payload.get(0..encryption.key_length()) {
+        let signer = match payload.get(0..PUBLIC_LEN) {
             Some(public_key_slice) => {
-                payload = &payload[encryption.key_length()..];
-                match encryption {
-                    Encryption::Ed25519 => MultiSigner::Ed25519(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                    Encryption::Sr25519 => MultiSigner::Sr25519(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                    Encryption::Ecdsa => MultiSigner::Ecdsa(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                }
+                payload = &payload[PUBLIC_LEN..];
+                Public(public_key_slice.try_into().expect("stable known length"))
             }
             None => return Err(ErrorCompanion::TooShort),
         };
@@ -61,54 +42,75 @@ impl FromQrAndDb for Transaction {
                     .try_into()
                     .expect("stable known length"),
             );
-            let metadata_storage = MetadataStorage::read_from_db(db_path, genesis_hash)?;
-            let specs_storage = SpecsStorage::read_from_db(db_path, *encryption, genesis_hash)?;
+            let metadata = match ValueMetadata::try_get_db(genesis_hash, db_path)? {
+                Some(a) => a,
+                None => return Err(ErrorCompanion::LoadMetadata{genesis_hash}),
+            };
+            let specs = match ValueSpecs::try_get_db(genesis_hash, db_path)? {
+                Some(a) => a,
+                None => return Err(ErrorCompanion::LoadSpecs{genesis_hash}),
+            };
             let signable_transaction = payload[..payload.len() - H256::len_bytes()].to_vec();
-            let short_metadata = cut_metadata(
+
+            // check that decoding is possible with complete metadata
+            match parse_transaction::<&[u8], (), RuntimeMetadataV15>(
                 &signable_transaction.as_ref(),
                 &mut (),
-                &metadata_storage.value,
-                &specs_storage.value.short_specs,
-            )
-            .map_err(ErrorCompanion::MetaCut)?;
-            Ok(Self {
-                genesis_hash,
-                encoded_short_meta: short_metadata.encode(),
-                encoded_signable_transaction: signable_transaction.encode(),
-                signer,
-            })
+                &metadata.inner(),
+                Some(genesis_hash),
+            ) {
+                Ok(_) => {
+                    let short_metadata = cut_metadata::<&[u8], (), Blake3Leaf, RuntimeMetadataV15>(
+                        &signable_transaction.as_ref(),
+                        &mut (),
+                        metadata.inner(),
+                        &specs.inner(),
+                    )
+                    .map_err(ErrorCompanion::MetaCut)?;
+                    match short_metadata.metadata_descriptor {
+                        MetadataDescriptor::V1{
+                            call_ty,
+                            signed_extensions,
+                            spec_name_version,
+                            base58prefix,
+                            decimals,
+                            unit
+                        } => Ok(Self{
+                            genesis_hash,
+                            encoded_metadata_set: MetadataSet {
+                                types: short_metadata.short_registry,
+                                call_ty,
+                                signed_extensions,
+                                spec_name_version,
+                                base58prefix,
+                                decimals,
+                                unit,
+                            }.encode(),
+                            encoded_signable_transaction: signable_transaction.encode(),
+                            signer,
+                        }),
+                        _ => unreachable!(),
+                    }
+                },
+                Err(SignableError::WrongSpecVersion{as_decoded, in_metadata}) => {
+                    Err(ErrorCompanion::UpdateMetadata{as_decoded, in_metadata})
+                },
+                Err(e) => Err(ErrorCompanion::TransactionNotParsable(e)),
+            }
         } else {
             Err(ErrorCompanion::TooShort)
         }
     }
 }
 
-pub trait FromQr: Sized {
-    fn from_payload_prelude_cut(
+impl Bytes {
+    pub fn from_payload_prelude_cut(
         payload: &[u8],
-        encryption: &Encryption,
-    ) -> Result<Self, ErrorCompanion>;
-}
-
-impl FromQr for Bytes {
-    fn from_payload_prelude_cut(
-        payload: &[u8],
-        encryption: &Encryption,
     ) -> Result<Self, ErrorCompanion> {
-        match payload.get(0..encryption.key_length()) {
+        match payload.get(0..PUBLIC_LEN) {
             Some(public_key_slice) => {
-                let bytes_uncut = payload[encryption.key_length()..].to_vec();
-                let signer = match encryption {
-                    Encryption::Ed25519 => MultiSigner::Ed25519(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                    Encryption::Sr25519 => MultiSigner::Sr25519(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                    Encryption::Ecdsa => MultiSigner::Ecdsa(
-                        public_key_slice.try_into().expect("stable known length"),
-                    ),
-                };
+                let bytes_uncut = payload[PUBLIC_LEN..].to_vec();
+                let signer = Public(public_key_slice.try_into().expect("stable known length"));
                 Ok(Self {
                     bytes_uncut,
                     signer,
@@ -119,7 +121,7 @@ impl FromQr for Bytes {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, uniffi::Object)]
 pub enum Action {
     Success,
     Transmit(Transmit),
@@ -134,7 +136,7 @@ pub struct Transmit {
 #[derive(Debug)]
 pub struct Transmittable {
     content: TransmittableContent,
-    signature_maker: Box<dyn SignByCompanion>,
+    signature_maker: Arc<dyn SignByCompanion>,
 }
 
 impl Transmittable {
@@ -150,9 +152,11 @@ impl Transmittable {
     }
 }
 
+#[uniffi::export]
 impl Action {
+    #[uniffi::constructor(name = "new_kampela_stop")]
     pub fn new_kampela_stop(
-        signature_maker: Box<dyn SignByCompanion>,
+        signature_maker: Arc<dyn SignByCompanion>,
     ) -> Result<Self, ErrorCompanion> {
         let transmittable = Transmittable {
             content: TransmittableContent::KampelaStop,
@@ -161,10 +165,11 @@ impl Action {
         Ok(Self::Transmit(transmittable.into_transmit()?))
     }
 
+    #[uniffi::constructor(name = "new_payload")]
     pub fn new_payload(
         mut payload: &[u8],
         db_path: &str,
-        signature_maker: Box<dyn SignByCompanion>,
+        signature_maker: Arc<dyn SignByCompanion>,
     ) -> Result<Self, ErrorCompanion> {
         match payload.get(..3) {
             Some(prelude) => {
@@ -172,12 +177,13 @@ impl Action {
                 if prelude[0] != PREFIX_SUBSTRATE {
                     return Err(ErrorCompanion::NotSubstrate);
                 }
+                if prelude[1] != ENCRYPTION_SR25519 {
+                    return Err(ErrorCompanion::OnlySr25519(prelude[1]))
+                }
                 match prelude[2] {
                     a if ID_SIGNABLE.contains(&a) => {
-                        let encryption = Encryption::decode(&mut &prelude[1..2])
-                            .map_err(|_| ErrorCompanion::UnknownSigningAlgorithm(prelude[1]))?;
                         let transaction =
-                            Transaction::from_payload_prelude_cut(payload, &encryption, db_path)?;
+                            Transaction::from_payload_prelude_cut(payload, db_path)?;
                         let transmittable = Transmittable {
                             content: TransmittableContent::SignableTransaction(transaction),
                             signature_maker,
@@ -185,30 +191,12 @@ impl Action {
                         Ok(Self::Transmit(transmittable.into_transmit()?))
                     }
                     ID_BYTES => {
-                        let encryption = Encryption::decode(&mut &prelude[1..2])
-                            .map_err(|_| ErrorCompanion::UnknownSigningAlgorithm(prelude[1]))?;
-                        let bytes = Bytes::from_payload_prelude_cut(payload, &encryption)?;
+                        let bytes = Bytes::from_payload_prelude_cut(payload)?;
                         let transmittable = Transmittable {
                             content: TransmittableContent::Bytes(bytes),
                             signature_maker,
                         };
                         Ok(Self::Transmit(transmittable.into_transmit()?))
-                    }
-                    ID_METADATA => {
-                        let encryption = Encryption::decode(&mut &prelude[1..2])
-                            .map_err(|_| ErrorCompanion::UnknownSigningAlgorithm(prelude[1]))?;
-                        let metadata_storage =
-                            MetadataStorage::from_payload_prelude_cut(payload, &encryption)?;
-                        metadata_storage.write_in_db(db_path)?;
-                        Ok(Self::Success)
-                    }
-                    ID_SPECS => {
-                        let encryption = Encryption::decode(&mut &prelude[1..2])
-                            .map_err(|_| ErrorCompanion::UnknownSigningAlgorithm(prelude[1]))?;
-                        let specs_storage =
-                            SpecsStorage::from_payload_prelude_cut(payload, &encryption)?;
-                        specs_storage.write_in_db(db_path)?;
-                        Ok(Self::Success)
                     }
                     a => Err(ErrorCompanion::UnknownPayloadType(a)),
                 }
@@ -217,10 +205,11 @@ impl Action {
         }
     }
 
+    #[uniffi::constructor(name = "new_derivation")]
     pub fn new_derivation(
         cut_path: String,
         has_pwd: bool,
-        signature_maker: Box<dyn SignByCompanion>,
+        signature_maker: Arc<dyn SignByCompanion>,
     ) -> Result<Self, ErrorCompanion> {
         let derivation = DerivationInfo { cut_path, has_pwd };
         let transmittable = Transmittable {
@@ -230,10 +219,12 @@ impl Action {
         Ok(Self::Transmit(transmittable.into_transmit()?))
     }
 
+    #[uniffi::method(name = "is_transmit")]
     pub fn is_transmit(&self) -> bool {
         if let Action::Transmit(_) = self { true } else { false }
     }
 
+    #[uniffi::method(name = "make_packet")]
     pub fn make_packet(self: &Arc<Self>) -> Option<Vec<u8>> {
         match self.as_ref() {
             Action::Success => None,

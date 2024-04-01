@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-	"database",
 	"qr_reader",
 	"siltti",
 ]

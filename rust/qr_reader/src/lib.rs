@@ -4,6 +4,8 @@
 use std::convert::TryInto;
 use std::sync::{Arc, RwLock};
 
+uniffi::setup_scaffolding!();
+
 /// Fountain QR code payload length upper limit.
 ///
 /// Maximum allowed payload length for fountain QR code is below `0x80000000`,
@@ -48,8 +50,9 @@ pub const FOUNTAIN_MARKER: u8 = 0b10000000;
 /// Data chunk size for fountain QR code.
 pub const CHUNK_SIZE: u16 = 1072;
 
-#[derive(Debug, Eq, PartialEq, thiserror::Error)]
 /// QR code reader errors.
+#[derive(Debug, Eq, PartialEq, thiserror::Error, uniffi::Error)]
+#[uniffi(flat_error)]
 pub enum ErrorQr {
     #[error("Empty frame.")]
     EmptyFrame,
@@ -119,13 +122,15 @@ fn show_raw_payload(raw_frame: &[u8]) -> String {
 
 /// Collected and processed frames interacting with the outside code through
 /// `uniffi`
-#[derive(Debug)]
+#[derive(Debug, uniffi::Object)]
 pub struct Collection {
     collection: RwLock<CollectionBody>,
 }
 
+#[uniffi::export]
 impl Collection {
     /// Make new [`Collection`].
+    #[uniffi::constructor]
     pub fn new() -> Self {
         Collection {
             collection: RwLock::new(CollectionBody::Empty),
@@ -133,6 +138,7 @@ impl Collection {
     }
 
     /// Clean existing [`Collection`].
+    #[uniffi::method]
     pub fn clean(self: &Arc<Self>) -> Result<(), ErrorQr> {
         let mut collection = self.collection.write().map_err(|_| ErrorQr::PoisonedLock)?;
         *collection = CollectionBody::Empty;
@@ -141,6 +147,7 @@ impl Collection {
 
     /// Process new frame and modify [`Collection`]. Outputs optional final
     /// result, indicating to UI that it is time to proceed.
+    #[uniffi::method]
     pub fn process_frame(self: &Arc<Self>, raw_frame: Vec<u8>) -> Result<Payload, ErrorQr> {
         let mut collection = self.collection.write().map_err(|_| ErrorQr::PoisonedLock)?;
         match &*collection {
@@ -168,6 +175,7 @@ impl Collection {
         }
     }
 
+    #[uniffi::method]
     pub fn frames(&self) -> Result<Option<Frames>, ErrorQr> {
         let collection = self.collection.read().map_err(|_| ErrorQr::PoisonedLock)?;
         match &*collection {
@@ -236,11 +244,13 @@ struct LegacyMultiContent {
 }
 
 /// Object to move output through uniffi
+#[derive(Debug, uniffi::Record)]
 pub struct Payload {
     pub payload: Option<Vec<u8>>,
 }
 
 /// Object to move number of frames through uniffi
+#[derive(Debug, uniffi::Record)]
 pub struct Frames {
     pub current: u32,
     pub total: u32,
