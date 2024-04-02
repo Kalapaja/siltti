@@ -68,8 +68,7 @@ enum class Mode {
 }
 
 class Signer : SignByCompanion {
-    @OptIn(ExperimentalUnsignedTypes::class)
-    override fun makeSignature(data: List<UByte>): List<UByte> {
+    override fun makeSignature(data: ByteArray): ByteArray {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply {
             load(null)
         }
@@ -78,20 +77,19 @@ class Signer : SignByCompanion {
 
         if (ke !is KeyStore.PrivateKeyEntry) {
             Log.w("", "Not an instance of a PrivateKeyEntry")
-            return emptyList()
+            return ByteArray(0)
         }
 
         val s = Signature.getInstance("SHA256withECDSA").apply {
             initSign(ke.privateKey)
-            update(data.toUByteArray().toByteArray())
+            update(data)
         }
 
-        val signature: ByteArray = s.sign()
-        return signature.toUByteArray().toList()
+        return s.sign()
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    override fun exportPublicKey(): List<UByte> {
+    override fun exportPublicKey(): ByteArray {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply {
             load(null)
         }
@@ -100,8 +98,8 @@ class Signer : SignByCompanion {
 
         if (ke !is KeyStore.PrivateKeyEntry) {
             Log.w("", "Not an instance of a PrivateKeyEntry")
-            return emptyList()
+            return ByteArray(0)
         }
-        return ke.certificate.publicKey.encoded.toUByteArray().toList()
+        return ke.certificate.publicKey.encoded
     }
 }
