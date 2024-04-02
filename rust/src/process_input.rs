@@ -8,13 +8,11 @@ use std::{
     convert::TryInto,
     sync::{Arc, RwLock},
 };
-use substrate_crypto_light::sr25519::{PUBLIC_LEN, Public};
+use substrate_crypto_light::sr25519::{Public, PUBLIC_LEN};
 use substrate_parser::{error::SignableError, parse_transaction};
 
-use crate::database::{ValueMetadata, ValueSpecs};
-use crate::definitions::{
-    Bytes, DerivationInfo, MetadataSet, Transaction, TransmittableContent,
-};
+use crate::database::ValueMetadataSpecs;
+use crate::definitions::{Bytes, DerivationInfo, MetadataSet, Transaction, TransmittableContent};
 use crate::error::ErrorCompanion;
 use crate::sign_with_companion::{SignByCompanion, SignatureMaker};
 
@@ -42,13 +40,9 @@ impl Transaction {
                     .try_into()
                     .expect("stable known length"),
             );
-            let metadata = match ValueMetadata::try_get_db(genesis_hash, db_path)? {
-                Some(a) => a,
-                None => return Err(ErrorCompanion::LoadMetadata{genesis_hash}),
-            };
-            let specs = match ValueSpecs::try_get_db(genesis_hash, db_path)? {
-                Some(a) => a,
-                None => return Err(ErrorCompanion::LoadSpecs{genesis_hash}),
+            let metadata_specs = match ValueMetadataSpecs::try_get_db(genesis_hash, db_path)? {
+                Some(a) => a.inner(),
+                None => return Err(ErrorCompanion::LoadSpecsMetadata { genesis_hash }),
             };
             let signable_transaction = payload[..payload.len() - H256::len_bytes()].to_vec();
 
@@ -56,26 +50,26 @@ impl Transaction {
             match parse_transaction::<&[u8], (), RuntimeMetadataV15>(
                 &signable_transaction.as_ref(),
                 &mut (),
-                &metadata.inner(),
+                &metadata_specs.metadata,
                 Some(genesis_hash),
             ) {
                 Ok(_) => {
                     let short_metadata = cut_metadata::<&[u8], (), Blake3Leaf, RuntimeMetadataV15>(
                         &signable_transaction.as_ref(),
                         &mut (),
-                        metadata.inner(),
-                        &specs.inner(),
+                        &metadata_specs.metadata,
+                        &metadata_specs.specs,
                     )
                     .map_err(ErrorCompanion::MetaCut)?;
                     match short_metadata.metadata_descriptor {
-                        MetadataDescriptor::V1{
+                        MetadataDescriptor::V1 {
                             call_ty,
                             signed_extensions,
                             spec_name_version,
                             base58prefix,
                             decimals,
-                            unit
-                        } => Ok(Self{
+                            unit,
+                        } => Ok(Self {
                             genesis_hash,
                             encoded_metadata_set: MetadataSet {
                                 types: short_metadata.short_registry,
@@ -85,16 +79,21 @@ impl Transaction {
                                 base58prefix,
                                 decimals,
                                 unit,
-                            }.encode(),
+                            }
+                            .encode(),
                             encoded_signable_transaction: signable_transaction.encode(),
                             signer,
                         }),
                         _ => unreachable!(),
                     }
-                },
-                Err(SignableError::WrongSpecVersion{as_decoded, in_metadata}) => {
-                    Err(ErrorCompanion::UpdateMetadata{as_decoded, in_metadata})
-                },
+                }
+                Err(SignableError::WrongSpecVersion {
+                    as_decoded,
+                    in_metadata,
+                }) => Err(ErrorCompanion::UpdateMetadata {
+                    as_decoded,
+                    in_metadata,
+                }),
                 Err(e) => Err(ErrorCompanion::TransactionNotParsable(e)),
             }
         } else {
@@ -104,9 +103,7 @@ impl Transaction {
 }
 
 impl Bytes {
-    pub fn from_payload_prelude_cut(
-        payload: &[u8],
-    ) -> Result<Self, ErrorCompanion> {
+    pub fn from_payload_prelude_cut(payload: &[u8]) -> Result<Self, ErrorCompanion> {
         match payload.get(0..PUBLIC_LEN) {
             Some(public_key_slice) => {
                 let bytes_uncut = payload[PUBLIC_LEN..].to_vec();
@@ -178,12 +175,11 @@ impl Action {
                     return Err(ErrorCompanion::NotSubstrate);
                 }
                 if prelude[1] != ENCRYPTION_SR25519 {
-                    return Err(ErrorCompanion::OnlySr25519(prelude[1]))
+                    return Err(ErrorCompanion::OnlySr25519(prelude[1]));
                 }
                 match prelude[2] {
                     a if ID_SIGNABLE.contains(&a) => {
-                        let transaction =
-                            Transaction::from_payload_prelude_cut(payload, db_path)?;
+                        let transaction = Transaction::from_payload_prelude_cut(payload, db_path)?;
                         let transmittable = Transmittable {
                             content: TransmittableContent::SignableTransaction(transaction),
                             signature_maker,
@@ -221,7 +217,7 @@ impl Action {
 
     #[uniffi::method(name = "is_transmit")]
     pub fn is_transmit(&self) -> bool {
-        if let Action::Transmit(_) = self { true } else { false }
+        matches!(self, Action::Transmit(_))
     }
 
     #[uniffi::method(name = "make_packet")]

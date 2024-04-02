@@ -1,10 +1,7 @@
-#![deny(unused_crate_dependencies)]
-#![deny(rustdoc::broken_intra_doc_links)]
+//! QR reader and parser
 
 use std::convert::TryInto;
 use std::sync::{Arc, RwLock};
-
-uniffi::setup_scaffolding!();
 
 /// Fountain QR code payload length upper limit.
 ///

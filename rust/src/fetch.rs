@@ -6,6 +6,7 @@ use lazy_static::lazy_static;
 use parity_scale_codec::DecodeAll;
 use primitive_types::H256;
 use serde_json::{Map, Number, Value};
+use std::sync::Mutex;
 use substrate_parser::{cards::ParsedData, decode_all_as_type, ShortSpecs};
 use tokio::{
     runtime::Runtime,
@@ -14,8 +15,6 @@ use tokio::{
 
 use crate::error::{ErrorCompanion, NotHex};
 use crate::utils::{address_with_port, unhex};
-
-use std::sync::Mutex;
 
 lazy_static! {
     static ref RUNTIME: Runtime = Runtime::new().expect("Runtime initiation failed.");
@@ -26,7 +25,8 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref RECEIVER_METADATA_FETCH: Mutex<Option<Receiver<RuntimeMetadataV15>>> = Mutex::new(None);
+    static ref RECEIVER_METADATA_FETCH: Mutex<Option<Receiver<RuntimeMetadataV15>>> =
+        Mutex::new(None);
 }
 
 pub fn try_read_full_fetch() -> Result<Option<FetchData>, ErrorCompanion> {
@@ -67,7 +67,7 @@ pub fn try_read_metadata_fetch() -> Result<Option<RuntimeMetadataV15>, ErrorComp
     }
 }
 
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
 pub struct FetchData {
     pub address: String,
     pub genesis_hash: H256,
@@ -75,7 +75,6 @@ pub struct FetchData {
     pub specs: ShortSpecs,
 }
 
-#[uniffi::export]
 pub fn full_fetch(address: &str) -> Result<(), ErrorCompanion> {
     let (tx, rx) = channel();
     let address = address.to_string();
@@ -183,24 +182,20 @@ pub fn full_fetch(address: &str) -> Result<(), ErrorCompanion> {
     Ok(())
 }
 
-#[uniffi::export]
 pub fn metadata_fetch(address: &str) -> Result<(), ErrorCompanion> {
     let (tx, rx) = channel();
-    let address_with_port = address_with_port(&address);
+    let address_with_port = address_with_port(address);
     RUNTIME.spawn(async move {
         let client = WsClientBuilder::default()
             .build(&address_with_port)
             .await
             .map_err(ErrorCompanion::Client)?;
 
-        // fetch metadata at known block
+        // fetch metadata at latest block
         let metadata_request: Value = client
             .request(
                 "state_call",
-                rpc_params![
-                    "Metadata_metadata_at_version",
-                    "0f000000"
-                ],
+                rpc_params!["Metadata_metadata_at_version", "0f000000"],
             )
             .await
             .map_err(ErrorCompanion::Client)?;

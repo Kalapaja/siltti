@@ -1,7 +1,7 @@
 use metadata_shortener::ShortRegistry;
 use parity_scale_codec::{Decode, Encode};
 use primitive_types::H256;
-use scale_info::{interner::UntrackedSymbol};
+use scale_info::interner::UntrackedSymbol;
 use std::any::TypeId;
 use substrate_crypto_light::sr25519::Public;
 use substrate_parser::traits::{SignedExtensionMetadata, SpecNameVersion};

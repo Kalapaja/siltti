@@ -1,4 +1,0 @@
-[bindings.kotlin]
-package_name = "fi.zymologia.siltti.uniffi"
-cdylib_name = "siltti"
-
