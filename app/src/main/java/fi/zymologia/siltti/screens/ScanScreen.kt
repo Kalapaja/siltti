@@ -44,7 +44,12 @@ import fi.zymologia.siltti.components.NetworkCard
 import fi.zymologia.siltti.components.ScanProgressBar
 import fi.zymologia.siltti.uniffi.*
 import fi.zymologia.siltti.uniffi.Action.Companion.newKampelaStop
-import fi.zymologia.siltti.uniffi.Collection
+import uniffi.siltti.Collection
+import uniffi.siltti.ErrorQr
+import uniffi.siltti.Frames
+import uniffi.siltti.Payload
+import uniffi.siltti.Selector
+import kotlin.reflect.KFunction1
 
 @Composable
 fun KeepScreenOn() {
@@ -70,7 +75,7 @@ fun ScanScreen(
     val cameraProviderFuture =
         remember { ProcessCameraProvider.getInstance(context) }
 
-    val networks = remember { mutableStateOf(SpecsDisplay(dbName)) }
+    val networks = remember { mutableStateOf(Selector(dbName)) }
 
     val error = remember { mutableStateOf("") }
 
@@ -119,7 +124,7 @@ fun ScanScreen(
                                 .build()
                                 .apply {
                                     setAnalyzer(executor) { imageProxy ->
-                                        processFrame(
+                                        processFrameWrapper(
                                             context,
                                             dbName,
                                             barcodeScanner,
@@ -154,8 +159,7 @@ fun ScanScreen(
                                                 }
                                             },
                                             collection::clean,
-                                            { error.value = it },
-                                        )
+                                        ) { error.value = it }
                                     }
                                 }
 
@@ -218,7 +222,7 @@ fun ScanScreen(
         }
         this.items(
             items = networks.value.getAllKeys(),
-            key = { it.toString() },
+            key = { it },
         ) { key ->
             NetworkCard(networks, key)
         }
@@ -242,13 +246,13 @@ fun ScanScreen(
  */
 @OptIn(ExperimentalUnsignedTypes::class)
 @SuppressLint("UnsafeOptInUsageError")
-fun processFrame(
+fun processFrameWrapper(
     context: Context,
     dbName: String,
     barcodeScanner: BarcodeScanner,
     imageProxy: ImageProxy,
     startTransmission: (Action) -> Unit,
-    submitFrame: (List<UByte>) -> Payload,
+    submitFrame: KFunction1<ByteArray, Payload>,
     refreshFrames: () -> Unit,
     clean: () -> Unit,
     setError: (String) -> Unit,
@@ -262,7 +266,7 @@ fun processFrame(
     barcodeScanner.process(inputImage)
         .addOnSuccessListener { barcodes ->
             barcodes.forEach {
-                it?.rawBytes?.toUByteArray()?.toList()?.let { payload ->
+                it?.rawBytes?.let { payload ->
                     try {
                         submitFrame(payload)
                     } catch (e: ErrorQr) {
