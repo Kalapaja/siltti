@@ -14,8 +14,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import uniffi.siltti.Key
-import uniffi.siltti.Selector
+import fi.zymologia.siltti.uniffi.Key
+import fi.zymologia.siltti.uniffi.Selector
 
 
 @Composable

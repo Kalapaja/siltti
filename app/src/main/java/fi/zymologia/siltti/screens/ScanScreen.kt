@@ -44,11 +44,6 @@ import fi.zymologia.siltti.components.NetworkCard
 import fi.zymologia.siltti.components.ScanProgressBar
 import fi.zymologia.siltti.uniffi.*
 import fi.zymologia.siltti.uniffi.Action.Companion.newKampelaStop
-import uniffi.siltti.Collection
-import uniffi.siltti.ErrorQr
-import uniffi.siltti.Frames
-import uniffi.siltti.Payload
-import uniffi.siltti.Selector
 import kotlin.reflect.KFunction1
 
 @Composable

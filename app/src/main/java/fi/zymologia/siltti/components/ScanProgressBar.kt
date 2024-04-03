@@ -16,7 +16,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import uniffi.siltti.Frames
+import fi.zymologia.siltti.uniffi.Frames
 
 @Composable
 fun ScanProgressBar(
