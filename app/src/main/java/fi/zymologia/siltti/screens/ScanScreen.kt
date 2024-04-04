@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Button
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
+import androidx.compose.material.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +72,8 @@ fun ScanScreen(
         remember { ProcessCameraProvider.getInstance(context) }
 
     val networks = remember { mutableStateOf(Selector(dbName)) }
+
+    val rpcServer = remember {mutableStateOf("")}
 
     val error = remember { mutableStateOf("") }
 
@@ -211,7 +214,6 @@ fun ScanScreen(
                     }
                     Text("")
                     Text("Available networks", style = MaterialTheme.typography.h4)
-                    Text("Scan first network specs and then metadata to add more networks")
                 }
             }
         }
@@ -220,6 +222,18 @@ fun ScanScreen(
             key = { it },
         ) { key ->
             NetworkCard(networks, key)
+        }
+        item {
+            TextField(value = rpcServer.value, onValueChange = { rpcServer.value = it })
+        }
+        item {
+            Button(
+                onClick = {
+                    networks.value.addNewElement(rpcServer.value, dbName)
+                },
+            ) {
+                Text("Add new network")
+            }
         }
         item {
             Button(
