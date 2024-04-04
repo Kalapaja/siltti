@@ -73,7 +73,7 @@ android.applicationVariants.configureEach { variant ->
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
 cargo {
-    module = "../rust/siltti"
+    module = "../rust"
     targetDirectory = "../rust/target"
     libname = "siltti"
     targets = ["arm64", "x86_64"]

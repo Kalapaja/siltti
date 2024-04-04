@@ -14,14 +14,14 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import fi.zymologia.siltti.uniffi.SpecsDisplay
-import fi.zymologia.siltti.uniffi.SpecsKey
+import fi.zymologia.siltti.uniffi.Key
+import fi.zymologia.siltti.uniffi.Selector
 
 
 @Composable
 fun NetworkCard(
-    networks: MutableState<SpecsDisplay>,
-    key: SpecsKey
+    networks: MutableState<Selector>,
+    key: Key,
 ) {
     Surface(
         color = MaterialTheme.colors.primary,
@@ -34,7 +34,7 @@ fun NetworkCard(
             modifier = Modifier.padding(10.dp)
         ) {
             Text(
-                networks.value.title(key) ?: "unknown",
+                networks.value.name(key) ?: "unknown",
                 color = MaterialTheme.colors.onPrimary
             )
             Text("Version: " + (networks.value.version(key) ?: "metadata unknown"))

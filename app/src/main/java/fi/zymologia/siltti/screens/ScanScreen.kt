@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Button
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
+import androidx.compose.material.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +45,7 @@ import fi.zymologia.siltti.components.NetworkCard
 import fi.zymologia.siltti.components.ScanProgressBar
 import fi.zymologia.siltti.uniffi.*
 import fi.zymologia.siltti.uniffi.Action.Companion.newKampelaStop
-import fi.zymologia.siltti.uniffi.Collection
+import kotlin.reflect.KFunction1
 
 @Composable
 fun KeepScreenOn() {
@@ -70,7 +71,9 @@ fun ScanScreen(
     val cameraProviderFuture =
         remember { ProcessCameraProvider.getInstance(context) }
 
-    val networks = remember { mutableStateOf(SpecsDisplay(dbName)) }
+    val networks = remember { mutableStateOf(Selector(dbName)) }
+
+    val rpcServer = remember {mutableStateOf("")}
 
     val error = remember { mutableStateOf("") }
 
@@ -119,7 +122,7 @@ fun ScanScreen(
                                 .build()
                                 .apply {
                                     setAnalyzer(executor) { imageProxy ->
-                                        processFrame(
+                                        processFrameWrapper(
                                             context,
                                             dbName,
                                             barcodeScanner,
@@ -154,8 +157,7 @@ fun ScanScreen(
                                                 }
                                             },
                                             collection::clean,
-                                            { error.value = it },
-                                        )
+                                        ) { error.value = it }
                                     }
                                 }
 
@@ -212,15 +214,26 @@ fun ScanScreen(
                     }
                     Text("")
                     Text("Available networks", style = MaterialTheme.typography.h4)
-                    Text("Scan first network specs and then metadata to add more networks")
                 }
             }
         }
         this.items(
             items = networks.value.getAllKeys(),
-            key = { it.toString() },
+            key = { it },
         ) { key ->
             NetworkCard(networks, key)
+        }
+        item {
+            TextField(value = rpcServer.value, onValueChange = { rpcServer.value = it })
+        }
+        item {
+            Button(
+                onClick = {
+                    networks.value.addNewElement(rpcServer.value, dbName)
+                },
+            ) {
+                Text("Add new network")
+            }
         }
         item {
             Button(
@@ -242,13 +255,13 @@ fun ScanScreen(
  */
 @OptIn(ExperimentalUnsignedTypes::class)
 @SuppressLint("UnsafeOptInUsageError")
-fun processFrame(
+fun processFrameWrapper(
     context: Context,
     dbName: String,
     barcodeScanner: BarcodeScanner,
     imageProxy: ImageProxy,
     startTransmission: (Action) -> Unit,
-    submitFrame: (List<UByte>) -> Payload,
+    submitFrame: KFunction1<ByteArray, Payload>,
     refreshFrames: () -> Unit,
     clean: () -> Unit,
     setError: (String) -> Unit,
@@ -262,7 +275,7 @@ fun processFrame(
     barcodeScanner.process(inputImage)
         .addOnSuccessListener { barcodes ->
             barcodes.forEach {
-                it?.rawBytes?.toUByteArray()?.toList()?.let { payload ->
+                it?.rawBytes?.let { payload ->
                     try {
                         submitFrame(payload)
                     } catch (e: ErrorQr) {

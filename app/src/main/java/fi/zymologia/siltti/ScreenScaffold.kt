@@ -24,7 +24,7 @@ fun ScreenScaffold(
     dbName: String,
     count: State<Int?>,
     counterReset: () -> Unit,
-    transmitCallback: (Action?) -> Unit
+    transmitCallback: (Action?) -> Unit,
 ) {
     var appState by remember { mutableStateOf(Mode.Scan) }
 
@@ -32,10 +32,10 @@ fun ScreenScaffold(
 
     Column(
         Modifier
-            .fillMaxSize()
+            .fillMaxSize(),
     ) {
         Box(
-            Modifier.padding(8.dp)
+            Modifier.padding(8.dp),
         ) {
             // TODO: use all the cores needed to make this smooth
             when (appState) {
@@ -43,14 +43,14 @@ fun ScreenScaffold(
                     fi.zymologia.siltti.screens.NewAddress(
                         setAppState,
                         transmitCallback,
-                        dbName
+                        dbName,
                     )
                 }
                 Mode.Scan -> {
                     ScanScreen(
                         dbName,
                         transmitCallback,
-                        setAppState
+                        setAppState,
                     )
                 }
                 Mode.TX -> {
@@ -64,14 +64,15 @@ fun ScreenScaffold(
 enum class Mode {
     Scan,
     Address,
-    TX;
+    TX,
 }
 
 class Signer : SignByCompanion {
     override fun makeSignature(data: ByteArray): ByteArray {
-        val ks = KeyStore.getInstance("AndroidKeyStore").apply {
-            load(null)
-        }
+        val ks =
+            KeyStore.getInstance("AndroidKeyStore").apply {
+                load(null)
+            }
 
         val ke = ks.getEntry("AndroidKeyStore", null)
 
@@ -80,19 +81,21 @@ class Signer : SignByCompanion {
             return ByteArray(0)
         }
 
-        val s = Signature.getInstance("SHA256withECDSA").apply {
-            initSign(ke.privateKey)
-            update(data)
-        }
+        val s =
+            Signature.getInstance("SHA256withECDSA").apply {
+                initSign(ke.privateKey)
+                update(data)
+            }
 
         return s.sign()
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
     override fun exportPublicKey(): ByteArray {
-        val ks = KeyStore.getInstance("AndroidKeyStore").apply {
-            load(null)
-        }
+        val ks =
+            KeyStore.getInstance("AndroidKeyStore").apply {
+                load(null)
+            }
 
         val ke = ks.getEntry("AndroidKeyStore", null)
 
