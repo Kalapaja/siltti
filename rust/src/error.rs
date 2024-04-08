@@ -45,6 +45,9 @@ pub enum ErrorCompanion {
     #[error("Unexpected genesis hash length.")]
     GenesisHashLength,
 
+    #[error("Key {0} got damaged on the interface.")]
+    InterfaceKey(String),
+
     #[error(
         "No metadata and specs for chain with genesis hash {} in the database.",
         hex::encode(genesis_hash)

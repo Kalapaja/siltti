@@ -44,6 +44,26 @@ impl Key {
     }
 }
 
+#[uniffi::export]
+impl Key {
+    #[uniffi::constructor]
+    pub fn import(hex_string: &str) -> Result<Self, ErrorCompanion> {
+        match hex::decode(hex_string) {
+            Ok(a) => match a.try_into() {
+                Ok(b) => Ok(Self {
+                    genesis_hash: H256(b),
+                }),
+                Err(_) => Err(ErrorCompanion::InterfaceKey(hex_string.to_owned())),
+            },
+            Err(_) => Err(ErrorCompanion::InterfaceKey(hex_string.to_owned())),
+        }
+    }
+    #[uniffi::method]
+    pub fn export(&self) -> String {
+        hex::encode(self.genesis_hash)
+    }
+}
+
 #[derive(Debug)]
 pub struct ValueAddress(pub String);
 

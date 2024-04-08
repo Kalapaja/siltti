@@ -145,10 +145,7 @@ impl Selector {
     }
 
     #[uniffi::method]
-    pub fn setup_defaults(
-        self: &Arc<Self>,
-        db_path: &str,
-    ) -> Result<(), ErrorCompanion> {
+    pub fn setup_defaults(self: &Arc<Self>, db_path: &str) -> Result<(), ErrorCompanion> {
         for address in ADDRESS_BOOK {
             self.add_new_element(address, db_path)?;
         }
@@ -369,12 +366,8 @@ pub fn accepted_metadata_fetch(
     }
 }
 
-pub const KUSAMA_ADDRESS: &str = "ws://kusama-rpc.polkadot.io";
-pub const POLKADOT_ADDRESS: &str = "ws://rpc.polkadot.io";
-pub const WESTEND_ADDRESS: &str = "ws://westend-rpc.polkadot.io";
+pub const KUSAMA_ADDRESS: &str = "ws://kusama.api.onfinality.io/public-ws";
+pub const POLKADOT_ADDRESS: &str = "ws://polkadot.api.onfinality.io/public-ws";
+pub const WESTEND_ADDRESS: &str = "ws://westend.api.onfinality.io/public-ws";
 
-pub const ADDRESS_BOOK: &[&str] = &[
-    //KUSAMA_ADDRESS,
-    //POLKADOT_ADDRESS,
-    WESTEND_ADDRESS,
-];
+pub const ADDRESS_BOOK: &[&str] = &[/*KUSAMA_ADDRESS, POLKADOT_ADDRESS, */WESTEND_ADDRESS];

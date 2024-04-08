@@ -174,8 +174,11 @@ pub fn full_fetch(address: &str) -> Result<(), ErrorCompanion> {
     let guard = RECEIVER_FULL_FETCH.lock();
     match guard {
         Ok(mut a) => {
-            if a.is_none() {*a = Some(rx);}
-            else {panic!("Parallel fetches unavailable at the moment.")}
+            if a.is_none() {
+                *a = Some(rx);
+            } else {
+                panic!("Parallel fetches unavailable at the moment.")
+            }
         }
         Err(_) => return Err(ErrorCompanion::ReceiverGuardPoisoned),
     }
@@ -227,8 +230,11 @@ pub fn metadata_fetch(address: &str) -> Result<(), ErrorCompanion> {
     let guard = RECEIVER_METADATA_FETCH.lock();
     match guard {
         Ok(mut a) => {
-            if a.is_none() {*a = Some(rx);}
-            else {panic!("Parallel fetches unavailable at the moment.")}
+            if a.is_none() {
+                *a = Some(rx);
+            } else {
+                panic!("Parallel fetches unavailable at the moment.")
+            }
         }
         Err(_) => return Err(ErrorCompanion::ReceiverGuardPoisoned),
     }
