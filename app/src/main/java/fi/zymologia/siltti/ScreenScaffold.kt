@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import fi.zymologia.siltti.screens.NetworkManager
 import fi.zymologia.siltti.screens.ScanScreen
 import fi.zymologia.siltti.screens.TXScreen
 import fi.zymologia.siltti.uniffi.*
@@ -37,7 +38,6 @@ fun ScreenScaffold(
         Box(
             Modifier.padding(8.dp),
         ) {
-            // TODO: use all the cores needed to make this smooth
             when (appState) {
                 Mode.Address -> {
                     fi.zymologia.siltti.screens.NewAddress(
@@ -53,6 +53,9 @@ fun ScreenScaffold(
                         setAppState,
                     )
                 }
+                Mode.Networks -> {
+                    NetworkManager(dbName, setAppState)
+                }
                 Mode.TX -> {
                     TXScreen(transmitCallback, setAppState, count, counterReset)
                 }
@@ -64,6 +67,7 @@ fun ScreenScaffold(
 enum class Mode {
     Scan,
     Address,
+    Networks,
     TX,
 }
 
