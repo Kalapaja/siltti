@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import fi.zymologia.siltti.Mode
 import fi.zymologia.siltti.components.NetworkCard
+import fi.zymologia.siltti.uniffi.Key.Companion.import
 import fi.zymologia.siltti.uniffi.Selector
 
 @Composable
@@ -36,10 +37,10 @@ fun NetworkManager(
             Text("Available networks", style = MaterialTheme.typography.h4)
         }
         this.items(
-            items = networks.value.getAllKeys(),
+            items = networks.value.getAllKeys().map { it.export() } ,
             key = { it },
         ) { key ->
-            NetworkCard(networks, key)
+            NetworkCard(networks, import(key))
         }
         item {
             TextField(value = rpcServer.value, onValueChange = { rpcServer.value = it })
