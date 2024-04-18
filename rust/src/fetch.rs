@@ -1,17 +1,17 @@
 use frame_metadata::{v15::RuntimeMetadataV15, RuntimeMetadata};
-use jsonrpsee::core::client::ClientT;
-use jsonrpsee::rpc_params;
-use jsonrpsee::ws_client::WsClientBuilder;
+use futures_util::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use parity_scale_codec::DecodeAll;
 use primitive_types::H256;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use std::sync::Mutex;
 use substrate_parser::{cards::ParsedData, decode_all_as_type, ShortSpecs};
 use tokio::{
     runtime::Runtime,
-    sync::oneshot::{channel, error::TryRecvError, Receiver},
+    sync::mpsc::{channel, error::TryRecvError, Receiver, Sender},
 };
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::error::{ErrorCompanion, NotHex};
 use crate::utils::{address_with_port, unhex};
@@ -21,47 +21,31 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref RECEIVER_FULL_FETCH: Mutex<Option<Receiver<FetchData>>> = Mutex::new(None);
+    static ref CHANNEL: Mutex<(Sender<Fetched>, Receiver<Fetched>)> = Mutex::new(channel(32));
+    static ref TX: Sender<Fetched> = CHANNEL
+        .lock()
+        .expect("Expected to be able to snatch TX of the channel.")
+        .0
+        .clone();
 }
 
-lazy_static! {
-    static ref RECEIVER_METADATA_FETCH: Mutex<Option<Receiver<RuntimeMetadataV15>>> =
-        Mutex::new(None);
+#[derive(Debug)]
+pub enum Fetched {
+    Whole {
+        fetch_data: FetchData,
+    },
+    Partial {
+        genesis_hash: H256,
+        metadata: RuntimeMetadataV15,
+    },
 }
 
-pub fn try_read_full_fetch() -> Result<Option<FetchData>, ErrorCompanion> {
-    let guard = RECEIVER_FULL_FETCH.lock();
-    match guard {
-        Ok(mut mg) => match *mg {
-            Some(ref mut a) => match a.try_recv() {
-                Ok(b) => {
-                    let out = Some(b);
-                    *mg = None;
-                    Ok(out)
-                }
-                Err(TryRecvError::Empty) => Ok(None),
-                Err(TryRecvError::Closed) => Err(ErrorCompanion::ReceiverClosed),
-            },
-            None => Ok(None),
-        },
-        Err(_) => Err(ErrorCompanion::ReceiverGuardPoisoned),
-    }
-}
-
-pub fn try_read_metadata_fetch() -> Result<Option<RuntimeMetadataV15>, ErrorCompanion> {
-    let guard = RECEIVER_METADATA_FETCH.lock();
-    match guard {
-        Ok(mut mg) => match *mg {
-            Some(ref mut a) => match a.try_recv() {
-                Ok(b) => {
-                    let out = Some(b);
-                    *mg = None;
-                    Ok(out)
-                }
-                Err(TryRecvError::Empty) => Ok(None),
-                Err(TryRecvError::Closed) => Err(ErrorCompanion::ReceiverClosed),
-            },
-            None => Ok(None),
+pub fn try_read() -> Result<Option<Fetched>, ErrorCompanion> {
+    match CHANNEL.lock() {
+        Ok(mut channel_guard) => match channel_guard.1.try_recv() {
+            Ok(a) => Ok(Some(a)),
+            Err(TryRecvError::Disconnected) => Err(ErrorCompanion::ReceiverClosed),
+            Err(TryRecvError::Empty) => Ok(None),
         },
         Err(_) => Err(ErrorCompanion::ReceiverGuardPoisoned),
     }
@@ -75,91 +59,166 @@ pub struct FetchData {
     pub specs: ShortSpecs,
 }
 
-pub fn full_fetch(address: &str) -> Result<(), ErrorCompanion> {
-    let (tx, rx) = channel();
+#[derive(Serialize)]
+pub struct Request {
+    pub id: u32,
+    pub jsonrpc: &'static str,
+    pub method: &'static str,
+    pub params: Vec<Value>,
+}
+
+impl Request {
+    pub fn make_new(method: &'static str, params: Vec<Value>) -> Self {
+        Request {
+            id: 0u32,
+            jsonrpc: "2.0",
+            method,
+            params,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Response {
+    pub jsonrpc: String,
+    pub result: Value,
+    pub id: u32,
+}
+
+pub fn full_fetch(address: &str) {
     let address = address.to_string();
     let address_with_port = address_with_port(&address);
     RUNTIME.spawn(async move {
-        let client = WsClientBuilder::default()
-            .build(&address_with_port)
+        let (mut websocket_stream, _response) = connect_async(address_with_port)
             .await
             .map_err(ErrorCompanion::Client)?;
 
         // fetch current block hash, to request later the metadata and specs for
         // the same block
-        let block_hash_request: Value = client
-            .request("chain_getBlockHash", rpc_params![])
+        let block_hash_request = Request::make_new("chain_getBlockHash", Vec::new());
+        let block_hash_json =
+            serde_json::to_string(&block_hash_request).map_err(ErrorCompanion::RequestSer)?;
+
+        websocket_stream
+            .send(Message::Text(block_hash_json))
             .await
             .map_err(ErrorCompanion::Client)?;
-        let block_hash_string = match block_hash_request {
-            Value::String(x) => x,
-            _ => return Err(ErrorCompanion::BlockHashFormat),
+
+        let block_hash_string = match websocket_stream.next().await {
+            Some(Ok(Message::Text(json_response))) => {
+                let response: Response =
+                    serde_json::from_str(&json_response).map_err(ErrorCompanion::ResponseDe)?;
+                match response.result {
+                    Value::String(x) => x,
+                    _ => return Err(ErrorCompanion::BlockHashFormat),
+                }
+            }
+            _ => return Err(ErrorCompanion::UnexpectedFetch),
         };
 
         // fetch genesis hash, must be a hexadecimal string transformable into
         // H256 format
-        let genesis_hash_request: Value = client
-            .request(
-                "chain_getBlockHash",
-                rpc_params![Value::Number(Number::from(0u8))],
-            )
+        let genesis_hash_request =
+            Request::make_new("chain_getBlockHash", vec![Value::Number(Number::from(0u8))]);
+        let genesis_hash_json =
+            serde_json::to_string(&genesis_hash_request).map_err(ErrorCompanion::RequestSer)?;
+
+        websocket_stream
+            .send(Message::Text(genesis_hash_json))
             .await
             .map_err(ErrorCompanion::Client)?;
-        let genesis_hash = match genesis_hash_request {
-            Value::String(x) => {
-                let genesis_hash_raw = unhex(&x, NotHex::GenesisHash)?;
-                H256(
-                    genesis_hash_raw
-                        .try_into()
-                        .map_err(|_| ErrorCompanion::GenesisHashLength)?,
-                )
+
+        let genesis_hash = match websocket_stream.next().await {
+            Some(Ok(Message::Text(json_response))) => {
+                let response: Response =
+                    serde_json::from_str(&json_response).map_err(ErrorCompanion::ResponseDe)?;
+                match response.result {
+                    Value::String(x) => {
+                        let genesis_hash_raw = unhex(&x, NotHex::GenesisHash)?;
+                        H256(
+                            genesis_hash_raw
+                                .try_into()
+                                .map_err(|_| ErrorCompanion::GenesisHashLength)?,
+                        )
+                    }
+                    _ => return Err(ErrorCompanion::GenesisHashFormat),
+                }
             }
-            _ => return Err(ErrorCompanion::GenesisHashFormat),
+            _ => return Err(ErrorCompanion::UnexpectedFetch),
         };
 
         // fetch metadata at known block
-        let metadata_request: Value = client
-            .request(
-                "state_call",
-                rpc_params![
-                    "Metadata_metadata_at_version",
-                    "0f000000",
-                    &block_hash_string
-                ],
-            )
+        let metadata_request = Request::make_new(
+            "state_call",
+            vec![
+                Value::String("Metadata_metadata_at_version".to_string()),
+                Value::String("0f000000".to_string()),
+                Value::String(block_hash_string.to_owned()),
+            ],
+        );
+        let metadata_json =
+            serde_json::to_string(&metadata_request).map_err(ErrorCompanion::RequestSer)?;
+
+        websocket_stream
+            .send(Message::Text(metadata_json))
             .await
             .map_err(ErrorCompanion::Client)?;
-        let metadata = match metadata_request {
-            Value::String(x) => {
-                let metadata_request_raw = unhex(&x, NotHex::Metadata)?;
-                let maybe_metadata_raw =
-                    Option::<Vec<u8>>::decode_all(&mut &metadata_request_raw[..])
-                        .map_err(|_| ErrorCompanion::RawMetadataNotDecodeable)?;
-                if let Some(meta_v15_bytes) = maybe_metadata_raw {
-                    if meta_v15_bytes.starts_with(b"meta") {
-                        match RuntimeMetadata::decode_all(&mut &meta_v15_bytes[4..]) {
-                            Ok(RuntimeMetadata::V15(runtime_metadata_v15)) => runtime_metadata_v15,
-                            Ok(_) => return Err(ErrorCompanion::NoMetadataV15),
-                            Err(_) => return Err(ErrorCompanion::MetadataNotDecodeable),
+
+        let metadata = match websocket_stream.next().await {
+            Some(Ok(Message::Text(json_response))) => {
+                let response: Response =
+                    serde_json::from_str(&json_response).map_err(ErrorCompanion::ResponseDe)?;
+                match response.result {
+                    Value::String(x) => {
+                        let metadata_request_raw = unhex(&x, NotHex::Metadata)?;
+                        let maybe_metadata_raw =
+                            Option::<Vec<u8>>::decode_all(&mut &metadata_request_raw[..])
+                                .map_err(|_| ErrorCompanion::RawMetadataNotDecodeable)?;
+                        if let Some(meta_v15_bytes) = maybe_metadata_raw {
+                            if meta_v15_bytes.starts_with(b"meta") {
+                                match RuntimeMetadata::decode_all(&mut &meta_v15_bytes[4..]) {
+                                    Ok(RuntimeMetadata::V15(runtime_metadata_v15)) => {
+                                        runtime_metadata_v15
+                                    }
+                                    Ok(_) => return Err(ErrorCompanion::NoMetadataV15),
+                                    Err(_) => return Err(ErrorCompanion::MetadataNotDecodeable),
+                                }
+                            } else {
+                                return Err(ErrorCompanion::NoMetaPrefix);
+                            }
+                        } else {
+                            return Err(ErrorCompanion::NoMetadataV15);
                         }
-                    } else {
-                        return Err(ErrorCompanion::NoMetaPrefix);
                     }
-                } else {
-                    return Err(ErrorCompanion::NoMetadataV15);
+                    _ => return Err(ErrorCompanion::MetadataFormat),
                 }
             }
-            _ => return Err(ErrorCompanion::MetadataFormat),
+            _ => return Err(ErrorCompanion::UnexpectedFetch),
         };
 
         // fetch specs at known block
-        let specs_request: Value = client
-            .request("system_properties", rpc_params![&block_hash_string])
+        let specs_request =
+            Request::make_new("system_properties", vec![Value::String(block_hash_string)]);
+        let specs_json =
+            serde_json::to_string(&specs_request).map_err(ErrorCompanion::RequestSer)?;
+
+        websocket_stream
+            .send(Message::Text(specs_json))
             .await
             .map_err(ErrorCompanion::Client)?;
-        let specs = match specs_request {
-            Value::Object(properties) => system_properties_to_short_specs(&properties, &metadata)?,
-            _ => return Err(ErrorCompanion::PropertiesFormat),
+
+        let specs = match websocket_stream.next().await {
+            Some(Ok(Message::Text(json_response))) => {
+                let response: Response =
+                    serde_json::from_str(&json_response).map_err(ErrorCompanion::ResponseDe)?;
+                match response.result {
+                    Value::Object(properties) => {
+                        system_properties_to_short_specs(&properties, &metadata)?
+                    }
+                    _ => return Err(ErrorCompanion::PropertiesFormat),
+                }
+            }
+            _ => return Err(ErrorCompanion::UnexpectedFetch),
         };
 
         let fetch_data = FetchData {
@@ -169,76 +228,74 @@ pub fn full_fetch(address: &str) -> Result<(), ErrorCompanion> {
             specs,
         };
 
-        tx.send(fetch_data).map_err(|_| ErrorCompanion::NotSent)
+        TX.send(Fetched::Whole { fetch_data })
+            .await
+            .map_err(|_| ErrorCompanion::NotSent)
     });
-    let guard = RECEIVER_FULL_FETCH.lock();
-    match guard {
-        Ok(mut a) => {
-            if a.is_none() {
-                *a = Some(rx);
-            } else {
-                panic!("Parallel fetches unavailable at the moment.")
-            }
-        }
-        Err(_) => return Err(ErrorCompanion::ReceiverGuardPoisoned),
-    }
-    Ok(())
 }
 
-pub fn metadata_fetch(address: &str) -> Result<(), ErrorCompanion> {
-    let (tx, rx) = channel();
+pub fn metadata_fetch(genesis_hash: H256, address: &str) {
     let address_with_port = address_with_port(address);
     RUNTIME.spawn(async move {
-        let client = WsClientBuilder::default()
-            .build(&address_with_port)
+        let (mut websocket_stream, _response) = connect_async(address_with_port)
             .await
             .map_err(ErrorCompanion::Client)?;
 
         // fetch metadata at latest block
-        let metadata_request: Value = client
-            .request(
-                "state_call",
-                rpc_params!["Metadata_metadata_at_version", "0f000000"],
-            )
+        let metadata_request = Request::make_new(
+            "state_call",
+            vec![
+                Value::String("Metadata_metadata_at_version".to_string()),
+                Value::String("0f000000".to_string()),
+            ],
+        );
+        let metadata_json =
+            serde_json::to_string(&metadata_request).map_err(ErrorCompanion::RequestSer)?;
+
+        websocket_stream
+            .send(Message::Text(metadata_json))
             .await
             .map_err(ErrorCompanion::Client)?;
-        let metadata = match metadata_request {
-            Value::String(x) => {
-                let metadata_request_raw = unhex(&x, NotHex::Metadata)?;
-                let maybe_metadata_raw =
-                    Option::<Vec<u8>>::decode_all(&mut &metadata_request_raw[..])
-                        .map_err(|_| ErrorCompanion::RawMetadataNotDecodeable)?;
-                if let Some(meta_v15_bytes) = maybe_metadata_raw {
-                    if meta_v15_bytes.starts_with(b"meta") {
-                        match RuntimeMetadata::decode_all(&mut &meta_v15_bytes[4..]) {
-                            Ok(RuntimeMetadata::V15(runtime_metadata_v15)) => runtime_metadata_v15,
-                            Ok(_) => return Err(ErrorCompanion::NoMetadataV15),
-                            Err(_) => return Err(ErrorCompanion::MetadataNotDecodeable),
+
+        let metadata = match websocket_stream.next().await {
+            Some(Ok(Message::Text(json_response))) => {
+                let response: Response =
+                    serde_json::from_str(&json_response).map_err(ErrorCompanion::ResponseDe)?;
+                match response.result {
+                    Value::String(x) => {
+                        let metadata_request_raw = unhex(&x, NotHex::Metadata)?;
+                        let maybe_metadata_raw =
+                            Option::<Vec<u8>>::decode_all(&mut &metadata_request_raw[..])
+                                .map_err(|_| ErrorCompanion::RawMetadataNotDecodeable)?;
+                        if let Some(meta_v15_bytes) = maybe_metadata_raw {
+                            if meta_v15_bytes.starts_with(b"meta") {
+                                match RuntimeMetadata::decode_all(&mut &meta_v15_bytes[4..]) {
+                                    Ok(RuntimeMetadata::V15(runtime_metadata_v15)) => {
+                                        runtime_metadata_v15
+                                    }
+                                    Ok(_) => return Err(ErrorCompanion::NoMetadataV15),
+                                    Err(_) => return Err(ErrorCompanion::MetadataNotDecodeable),
+                                }
+                            } else {
+                                return Err(ErrorCompanion::NoMetaPrefix);
+                            }
+                        } else {
+                            return Err(ErrorCompanion::NoMetadataV15);
                         }
-                    } else {
-                        return Err(ErrorCompanion::NoMetaPrefix);
                     }
-                } else {
-                    return Err(ErrorCompanion::NoMetadataV15);
+                    _ => return Err(ErrorCompanion::MetadataFormat),
                 }
             }
             _ => return Err(ErrorCompanion::MetadataFormat),
         };
 
-        tx.send(metadata).map_err(|_| ErrorCompanion::NotSent)
+        TX.send(Fetched::Partial {
+            genesis_hash,
+            metadata,
+        })
+        .await
+        .map_err(|_| ErrorCompanion::NotSent)
     });
-    let guard = RECEIVER_METADATA_FETCH.lock();
-    match guard {
-        Ok(mut a) => {
-            if a.is_none() {
-                *a = Some(rx);
-            } else {
-                panic!("Parallel fetches unavailable at the moment.")
-            }
-        }
-        Err(_) => return Err(ErrorCompanion::ReceiverGuardPoisoned),
-    }
-    Ok(())
 }
 
 fn optional_prefix_from_meta(metadata: &RuntimeMetadataV15) -> Option<u16> {

@@ -1,6 +1,5 @@
 //! Errors occuring in companion.
 use frame_metadata::v15::RuntimeMetadataV15;
-use jsonrpsee::core::ClientError;
 use metadata_shortener::error::MetaCutError;
 use primitive_types::H256;
 use sled::IVec;
@@ -18,8 +17,8 @@ pub enum ErrorCompanion {
     #[error("Unexpected block hash format.")]
     BlockHashFormat,
 
-    #[error("Ws client error. {0}")]
-    Client(ClientError),
+    #[error("Client error. {0}")]
+    Client(tokio_tungstenite::tungstenite::Error),
 
     #[error("Internal database error. {0}")]
     DbInternal(sled::Error),
@@ -120,17 +119,26 @@ pub enum ErrorCompanion {
     #[error("Can't read data through the interface. Receiver guard is poisoned.")]
     ReceiverGuardPoisoned,
 
+    #[error("Request serialization failure. {0}")]
+    RequestSer(serde_json::Error),
+
+    #[error("Response de-serialization failure. {0}")]
+    ResponseDe(serde_json::Error),
+
     #[error("Received QR payload is too short.")]
     TooShort,
 
-    #[error("Received transaction could not be parsed. {0}.")]
+    #[error("Received transaction could not be parsed. {0}")]
     TransactionNotParsable(SignableError<(), RuntimeMetadataV15>),
 
-    #[error("Unexpected payload type, 0x{}", hex::encode([*.0]))]
-    UnknownPayloadType(u8),
+    #[error("Expected valid fetch value, with text format message in it. Fetch produced something unexpected instead.")]
+    UnexpectedFetch,
 
     #[error("Format of fetched unit {value} is not supported.")]
     UnitFormatNotSupported { value: String },
+
+    #[error("Unexpected payload type, 0x{}", hex::encode([*.0]))]
+    UnknownPayloadType(u8),
 
     #[error("Try updating metadata. Metadata version in transaction {as_decoded} does not match the version of the available metadata entry {in_metadata}.")]
     UpdateMetadata {

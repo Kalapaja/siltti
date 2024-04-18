@@ -5,9 +5,9 @@ pub mod database;
 pub mod definitions;
 pub mod error;
 pub mod fetch;
+pub mod interface;
 pub mod process_input;
 pub mod qr_reader;
-pub mod selector;
 pub mod sign_with_companion;
 #[cfg(test)]
 mod tests;

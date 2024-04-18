@@ -25,7 +25,7 @@ pub const DATA: &[u8] = b"data";
 /// Key for the database entries: genesis hash.
 ///
 /// If the genesis hash changes, all info must be entered again.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, uniffi::Object)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, uniffi::Object)]
 pub struct Key {
     pub genesis_hash: H256,
 }
@@ -44,23 +44,44 @@ impl Key {
     }
 }
 
-#[uniffi::export]
-impl Key {
-    #[uniffi::constructor]
-    pub fn import(hex_string: &str) -> Result<Self, ErrorCompanion> {
-        match hex::decode(hex_string) {
-            Ok(a) => match a.try_into() {
-                Ok(b) => Ok(Self {
-                    genesis_hash: H256(b),
-                }),
-                Err(_) => Err(ErrorCompanion::InterfaceKey(hex_string.to_owned())),
-            },
-            Err(_) => Err(ErrorCompanion::InterfaceKey(hex_string.to_owned())),
-        }
+unsafe impl<UT> uniffi::Lower<UT> for Key {
+    type FfiType = Key;
+    const TYPE_ID_META: uniffi::MetadataBuffer = uniffi::MetadataBuffer {
+        bytes: [0u8; 16384],
+        size: 64usize,
+    };
+    fn lower(obj: Self) -> Self::FfiType {
+        obj
     }
-    #[uniffi::method]
-    pub fn export(&self) -> String {
-        hex::encode(self.genesis_hash)
+    fn write(obj: Self, buf: &mut Vec<u8>) {
+        buf.copy_from_slice(obj.genesis_hash.0.as_slice())
+    }
+}
+
+unsafe impl<UT> uniffi::Lift<UT> for Key {
+    type FfiType = Key;
+    const TYPE_ID_META: uniffi::MetadataBuffer = uniffi::MetadataBuffer {
+        bytes: [0u8; 16384],
+        size: 64usize,
+    };
+    fn try_lift(v: Self::FfiType) -> uniffi::Result<Self> {
+        Ok(v)
+    }
+    fn try_read(buf: &mut &[u8]) -> uniffi::Result<Self> {
+        let slice = buf.get(..32).ok_or(uniffi::deps::anyhow::Error::msg(
+            "Not enough bytes in buffer",
+        ))?;
+        Ok(Self {
+            genesis_hash: H256(slice.try_into().expect("static length, always fits")),
+        })
+    }
+}
+
+impl uniffi::FfiDefault for Key {
+    fn ffi_default() -> Self {
+        Key {
+            genesis_hash: H256([0; 32]),
+        }
     }
 }
 
