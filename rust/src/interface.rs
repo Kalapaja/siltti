@@ -6,7 +6,7 @@ use sled::Transactional;
 use substrate_parser::traits::SpecNameVersion;
 
 use crate::database::{
-    open_db, open_tree, Key, MetadataSpecs, ValueAddress, ValueMetadataSpecs, ADDRESS, DATA,
+    open_db, open_tree, ChainKey, MetadataSpecs, ValueAddress, ValueMetadataSpecs, ADDRESS, DATA,
 };
 use crate::error::ErrorCompanion;
 use crate::fetch::{full_fetch, metadata_fetch, try_read, FetchData, Fetched};
@@ -14,7 +14,7 @@ use crate::fetch::{full_fetch, metadata_fetch, try_read, FetchData, Fetched};
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct SelectorElement {
     pub address: String,
-    pub key: Key,
+    pub key: ChainKey,
     pub spec_name_metadata_version: SpecNameVersion,
 }
 
@@ -44,24 +44,24 @@ pub fn request_defaults() {
 }
 
 #[uniffi::export]
-pub fn get_all_keys(db_path: &str) -> Result<Vec<Key>, ErrorCompanion> {
+pub fn get_all_keys(db_path: &str) -> Result<Vec<ChainKey>, ErrorCompanion> {
     let database = open_db(db_path)?;
     let data_tree = open_tree(&database, DATA)?;
-    let mut key_set: Vec<Key> = Vec::new();
+    let mut key_set: Vec<ChainKey> = Vec::new();
     for (key_ivec, _) in data_tree.iter().flatten() {
-        key_set.push(Key::from_db_key(key_ivec)?);
+        key_set.push(ChainKey::from_db_key(key_ivec)?);
     }
     key_set.sort();
     Ok(key_set)
 }
 
 #[uniffi::export]
-pub fn delete_by_key(key: Key, db_path: &str) -> Result<(), ErrorCompanion> {
+pub fn delete_by_key(chain_key: ChainKey, db_path: &str) -> Result<(), ErrorCompanion> {
     let database = open_db(db_path)?;
     let address_tree = open_tree(&database, ADDRESS)?;
     let data_tree = open_tree(&database, DATA)?;
 
-    let key_to_delete = key.as_db_key();
+    let key_to_delete = chain_key.as_db_key();
 
     (&address_tree, &data_tree)
         .transaction(|(tx_address, tx_data)| {
@@ -76,12 +76,12 @@ pub fn delete_by_key(key: Key, db_path: &str) -> Result<(), ErrorCompanion> {
 }
 
 #[uniffi::export]
-pub fn request_update_by_key(key: Key, db_path: &str) -> Result<(), ErrorCompanion> {
-    let address = match ValueAddress::try_get_db(key.genesis_hash, db_path)? {
+pub fn request_update_by_key(chain_key: ChainKey, db_path: &str) -> Result<(), ErrorCompanion> {
+    let address = match ValueAddress::try_get_db(chain_key.genesis_hash, db_path)? {
         Some(a) => a.inner(),
-        None => return Err(ErrorCompanion::LostAddress(key.genesis_hash)),
+        None => return Err(ErrorCompanion::LostAddress(chain_key.genesis_hash)),
     };
-    metadata_fetch(key.genesis_hash, &address);
+    metadata_fetch(chain_key.genesis_hash, &address);
     Ok(())
 }
 
@@ -95,7 +95,7 @@ fn accept_full_fetch(fetch_data: FetchData, db_path: &str) -> Result<(), ErrorCo
     let address_tree = open_tree(&database, ADDRESS)?;
     let data_tree = open_tree(&database, DATA)?;
 
-    let key_to_insert = Key::new(fetch_data.genesis_hash).as_db_key();
+    let key_to_insert = ChainKey::new(fetch_data.genesis_hash).as_db_key();
     let value_address_to_insert = ValueAddress::new(fetch_data.address).into_value();
     let value_metadata_specs_to_insert = ValueMetadataSpecs::new(MetadataSpecs {
         metadata: fetch_data.metadata,
@@ -139,7 +139,7 @@ fn accept_metadata_fetch(
     (data_tree)
         .transaction(|tx_data| {
             tx_data.insert(
-                Key::new(genesis_hash).as_db_key().as_slice(),
+                ChainKey::new(genesis_hash).as_db_key().as_slice(),
                 value_metadata_specs.into_value(),
             )?;
             tx_data.flush();
@@ -149,8 +149,8 @@ fn accept_metadata_fetch(
     Ok(())
 }
 
-pub const KUSAMA_ADDRESS: &str = "ws://kusama.api.onfinality.io/public-ws";
-pub const POLKADOT_ADDRESS: &str = "ws://polkadot.api.onfinality.io/public-ws";
-pub const WESTEND_ADDRESS: &str = "ws://westend.api.onfinality.io/public-ws";
+pub const KUSAMA_ADDRESS: &str = "wss://kusama.api.onfinality.io/public-ws";
+pub const POLKADOT_ADDRESS: &str = "wss://polkadot.api.onfinality.io/public-ws";
+pub const WESTEND_ADDRESS: &str = "wss://westend.api.onfinality.io/public-ws";
 
 pub const ADDRESS_BOOK: &[&str] = &[KUSAMA_ADDRESS, POLKADOT_ADDRESS, WESTEND_ADDRESS];
