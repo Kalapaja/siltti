@@ -8,6 +8,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import fi.zymologia.siltti.screens.allPermissionsGranted
+import fi.zymologia.siltti.uniffi.ChainKey
+import fi.zymologia.siltti.uniffi.getAllKeys
 
 fun Context.getActivity(): Activity = when (this) {
     is Activity -> this
@@ -40,4 +42,9 @@ class PackagesSent : ViewModel() {
     fun disable() {
         _count.value = null
     }
+}
+
+class Networks(dbPath: String) : ViewModel() {
+    private val _keys = MutableLiveData(getAllKeys(dbPath))
+    val keys: LiveData<List<ChainKey>> = _keys
 }

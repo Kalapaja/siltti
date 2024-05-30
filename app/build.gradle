@@ -80,6 +80,7 @@ cargo {
     apiLevel = 21
     profile = 'release'
     extraCargoBuildArguments = ["--locked"]
+    pythonCommand = "python3"
 }
 
 dependencies {

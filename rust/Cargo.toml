@@ -22,14 +22,14 @@ substrate-crypto-light = {git = "https://github.com/Alzymologist/substrate-crypt
 substrate_parser = {git = "https://github.com/Alzymologist/substrate-parser", default-features = false, rev = "65de6a4fe207a64f9857247af4e9f7509fa6de4f"}
 thiserror = "1.0.35"
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = { version = "0.21.0", features = ["handshake", "native-tls"] }
-uniffi = { version = "0.27.0", features = ["cli"] }
+tokio-tungstenite = { version = "0.21.0", features = ["handshake", "rustls-tls-native-roots"] }
+uniffi = { version = "0.27.2", features = ["cli"] }
 
 [build-dependencies]
-uniffi = { version = "0.27.0", features = ["build", "cli"] }
+uniffi = { version = "0.27.2", features = ["build", "cli"] }
 
 [dev-dependencies]
-uniffi = { version = "0.27.0", features = ["bindgen-tests"] }
+uniffi = { version = "0.27.2", features = ["bindgen-tests"] }
 
 [lib]
 crate-type = ["staticlib", "cdylib"]

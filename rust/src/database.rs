@@ -5,6 +5,7 @@ use sled::{open, Db, IVec, Tree};
 use substrate_parser::ShortSpecs;
 
 use crate::error::ErrorCompanion;
+use crate::UniffiCustomTypeConverter;
 
 pub(crate) fn open_db(db_path: &str) -> Result<Db, ErrorCompanion> {
     open(db_path).map_err(ErrorCompanion::DbInternal)
@@ -25,12 +26,12 @@ pub const DATA: &[u8] = b"data";
 /// Key for the database entries: genesis hash.
 ///
 /// If the genesis hash changes, all info must be entered again.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, uniffi::Object)]
-pub struct Key {
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ChainKey {
     pub genesis_hash: H256,
 }
 
-impl Key {
+impl ChainKey {
     pub fn new(genesis_hash: H256) -> Self {
         Self { genesis_hash }
     }
@@ -44,8 +45,28 @@ impl Key {
     }
 }
 
-unsafe impl<UT> uniffi::Lower<UT> for Key {
-    type FfiType = Key;
+uniffi::custom_type!(ChainKey, String);
+
+impl UniffiCustomTypeConverter for ChainKey {
+    type Builtin = String;
+
+    fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
+        let inner = hex::decode(val).map_err(|_| uniffi::deps::anyhow::Error::msg(
+            "Invalid hex encoding",
+        ))?;
+        Ok(ChainKey{ genesis_hash: H256( inner.try_into().map_err(|_| uniffi::deps::anyhow::Error::msg(
+            "Incorrect length",
+        ))?) })
+    }
+
+    fn from_custom(obj: Self) -> Self::Builtin {
+        hex::encode(obj.genesis_hash.0)
+    }
+}
+
+/*
+unsafe impl<UT> uniffi::Lower<UT> for ChainKey {
+    type FfiType = ChainKey;
     const TYPE_ID_META: uniffi::MetadataBuffer = uniffi::MetadataBuffer {
         bytes: [0u8; 16384],
         size: 64usize,
@@ -58,8 +79,8 @@ unsafe impl<UT> uniffi::Lower<UT> for Key {
     }
 }
 
-unsafe impl<UT> uniffi::Lift<UT> for Key {
-    type FfiType = Key;
+unsafe impl<UT> uniffi::Lift<UT> for ChainKey {
+    type FfiType = ChainKey;
     const TYPE_ID_META: uniffi::MetadataBuffer = uniffi::MetadataBuffer {
         bytes: [0u8; 16384],
         size: 64usize,
@@ -77,14 +98,14 @@ unsafe impl<UT> uniffi::Lift<UT> for Key {
     }
 }
 
-impl uniffi::FfiDefault for Key {
+impl uniffi::FfiDefault for ChainKey {
     fn ffi_default() -> Self {
-        Key {
+        ChainKey {
             genesis_hash: H256([0; 32]),
         }
     }
 }
-
+*/
 #[derive(Debug)]
 pub struct ValueAddress(pub String);
 
@@ -101,12 +122,12 @@ macro_rules! impl_try_get {
     ($($ty: ty, $inner_ty: ty, $tree: expr, $error: ident), *) => {
         $(
             impl $ty {
-                pub fn from_db_value(value_ivec: IVec, key: &Key) -> Result<Self, ErrorCompanion> {
+                pub fn from_db_value(value_ivec: IVec, key: &ChainKey) -> Result<Self, ErrorCompanion> {
                     let value = <$inner_ty>::decode(&mut &value_ivec[..]).map_err(|_| ErrorCompanion::$error(key.genesis_hash))?;
                     Ok(Self(value))
                 }
                 pub fn try_get_tree(genesis_hash: H256, tree: &Tree) -> Result<Option<Self>, ErrorCompanion> {
-                    let key = Key::new(genesis_hash);
+                    let key = ChainKey::new(genesis_hash);
                     match tree.get(key.as_db_key()) {
                         Ok(Some(value_ivec)) => Ok(Some(Self::from_db_value(value_ivec, &key)?)),
                         Ok(None) => Ok(None),
