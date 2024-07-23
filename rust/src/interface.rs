@@ -149,8 +149,8 @@ fn accept_metadata_fetch(
     Ok(())
 }
 
-pub const KUSAMA_ADDRESS: &str = "wss://kusama.api.onfinality.io/public-ws";
-pub const POLKADOT_ADDRESS: &str = "wss://polkadot.api.onfinality.io/public-ws";
-pub const WESTEND_ADDRESS: &str = "wss://westend.api.onfinality.io/public-ws";
+pub const KUSAMA_ADDRESS: &str = "ws://kusama.api.onfinality.io/public-ws";
+pub const POLKADOT_ADDRESS: &str = "ws://polkadot.api.onfinality.io/public-ws";
+pub const WESTEND_ADDRESS: &str = "ws://westend.api.onfinality.io/public-ws";
 
 pub const ADDRESS_BOOK: &[&str] = &[KUSAMA_ADDRESS, POLKADOT_ADDRESS, WESTEND_ADDRESS];

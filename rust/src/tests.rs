@@ -1,6 +1,9 @@
+use ntest::timeout;
+
 use crate::interface::{get_all_keys, is_updated, request_defaults};
 
 #[test]
+#[timeout(60_000)]
 fn setup_defaults() {
     let db_path = "../defaults_test";
 

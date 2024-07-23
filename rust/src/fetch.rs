@@ -3,6 +3,8 @@ use futures_util::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use parity_scale_codec::DecodeAll;
 use primitive_types::H256;
+//use rustls::crypto::CryptoProvider;
+//use rustls_rustcrypto::provider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 use std::sync::Mutex;
@@ -17,7 +19,10 @@ use crate::error::{ErrorCompanion, NotHex};
 use crate::utils::{address_with_port, unhex};
 
 lazy_static! {
-    static ref RUNTIME: Runtime = Runtime::new().expect("Runtime initiation failed.");
+    static ref RUNTIME: Runtime = {
+        rustls_rustcrypto::provider().install_default().expect("Default provider intiation failed.");
+        Runtime::new().expect("Runtime initiation failed.")
+    };
 }
 
 lazy_static! {
