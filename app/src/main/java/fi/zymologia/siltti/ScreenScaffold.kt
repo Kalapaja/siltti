@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import fi.zymologia.siltti.screens.NetworkManager
 import fi.zymologia.siltti.screens.ScanScreen
 import fi.zymologia.siltti.screens.TXScreen
 import fi.zymologia.siltti.uniffi.*
@@ -24,7 +25,7 @@ fun ScreenScaffold(
     dbName: String,
     count: State<Int?>,
     counterReset: () -> Unit,
-    transmitCallback: (Action?) -> Unit
+    transmitCallback: (Action?) -> Unit,
 ) {
     var appState by remember { mutableStateOf(Mode.Scan) }
 
@@ -32,26 +33,28 @@ fun ScreenScaffold(
 
     Column(
         Modifier
-            .fillMaxSize()
+            .fillMaxSize(),
     ) {
         Box(
-            Modifier.padding(8.dp)
+            Modifier.padding(8.dp),
         ) {
-            // TODO: use all the cores needed to make this smooth
             when (appState) {
                 Mode.Address -> {
                     fi.zymologia.siltti.screens.NewAddress(
                         setAppState,
                         transmitCallback,
-                        dbName
+                        dbName,
                     )
                 }
                 Mode.Scan -> {
                     ScanScreen(
                         dbName,
                         transmitCallback,
-                        setAppState
+                        setAppState,
                     )
+                }
+                Mode.Networks -> {
+                    NetworkManager(dbName, setAppState)
                 }
                 Mode.TX -> {
                     TXScreen(transmitCallback, setAppState, count, counterReset)
@@ -64,44 +67,46 @@ fun ScreenScaffold(
 enum class Mode {
     Scan,
     Address,
-    TX;
+    Networks,
+    TX,
 }
 
 class Signer : SignByCompanion {
-    @OptIn(ExperimentalUnsignedTypes::class)
-    override fun makeSignature(data: List<UByte>): List<UByte> {
-        val ks = KeyStore.getInstance("AndroidKeyStore").apply {
-            load(null)
-        }
+    override fun makeSignature(data: ByteArray): ByteArray {
+        val ks =
+            KeyStore.getInstance("AndroidKeyStore").apply {
+                load(null)
+            }
 
         val ke = ks.getEntry("AndroidKeyStore", null)
 
         if (ke !is KeyStore.PrivateKeyEntry) {
             Log.w("", "Not an instance of a PrivateKeyEntry")
-            return emptyList()
+            return ByteArray(0)
         }
 
-        val s = Signature.getInstance("SHA256withECDSA").apply {
-            initSign(ke.privateKey)
-            update(data.toUByteArray().toByteArray())
-        }
+        val s =
+            Signature.getInstance("SHA256withECDSA").apply {
+                initSign(ke.privateKey)
+                update(data)
+            }
 
-        val signature: ByteArray = s.sign()
-        return signature.toUByteArray().toList()
+        return s.sign()
     }
 
     @OptIn(ExperimentalUnsignedTypes::class)
-    override fun exportPublicKey(): List<UByte> {
-        val ks = KeyStore.getInstance("AndroidKeyStore").apply {
-            load(null)
-        }
+    override fun exportPublicKey(): ByteArray {
+        val ks =
+            KeyStore.getInstance("AndroidKeyStore").apply {
+                load(null)
+            }
 
         val ke = ks.getEntry("AndroidKeyStore", null)
 
         if (ke !is KeyStore.PrivateKeyEntry) {
             Log.w("", "Not an instance of a PrivateKeyEntry")
-            return emptyList()
+            return ByteArray(0)
         }
-        return ke.certificate.publicKey.encoded.toUByteArray().toList()
+        return ke.certificate.publicKey.encoded
     }
 }

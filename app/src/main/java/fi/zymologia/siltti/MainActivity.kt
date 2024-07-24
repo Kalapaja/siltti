@@ -196,7 +196,7 @@ class MainActivity : ComponentActivity() {
                             try {
                                 action.makePacket()?.let {
                                     Log.d("======> ", it.toString())
-                                    tech.transceive(it.toUByteArray().toByteArray())
+                                    tech.transceive(it)
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                                         mainExecutor.execute { packagesSent.inc() }
                                     }

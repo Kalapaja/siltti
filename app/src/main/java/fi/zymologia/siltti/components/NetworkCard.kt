@@ -1,43 +1,42 @@
 package fi.zymologia.siltti.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.Icon
+import androidx.compose.material.Button
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddCircle
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import fi.zymologia.siltti.uniffi.SpecsDisplay
-import fi.zymologia.siltti.uniffi.SpecsKey
+import fi.zymologia.siltti.uniffi.ChainKey
+import fi.zymologia.siltti.uniffi.deleteByKey
+import fi.zymologia.siltti.uniffi.requestUpdateByKey
 
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NetworkCard(
-    networks: MutableState<SpecsDisplay>,
-    key: SpecsKey
+    key: ChainKey,
+    dbName: String,
 ) {
     Surface(
         color = MaterialTheme.colors.primary,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(10.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
     ) {
         Row(
             horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.padding(10.dp)
+            modifier = Modifier.padding(10.dp),
         ) {
             Text(
-                networks.value.title(key) ?: "unknown",
-                color = MaterialTheme.colors.onPrimary
+                key.substring(0, 64),
+                color = MaterialTheme.colors.onPrimary,
+                modifier = Modifier.combinedClickable(onClick = { requestUpdateByKey(key, dbName) }, onLongClick = { deleteByKey(key, dbName) }),
             )
-            Text("Version: " + (networks.value.version(key) ?: "metadata unknown"))
+            // Text("Version: " + "PUT NETWORK VERSION HERE")
         }
     }
 }
