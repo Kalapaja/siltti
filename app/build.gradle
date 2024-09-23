@@ -11,9 +11,9 @@ android {
     defaultConfig {
         applicationId "fi.zymologia.siltti"
         minSdk 25
-        targetSdk 34
-        versionCode 9
-        versionName "0.9.0"
+        targetSdk 35
+        versionCode 10
+        versionName "0.10.0"
 
         ndk {
             //noinspection ChromeOsAbiSupport
