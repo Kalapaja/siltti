@@ -9,6 +9,10 @@ This is a reference implementation for hot-side protocol of Kampela device. This
 1. Android Studio
 2. uniffi
 
+## Android build notes
+
+Remeber to bump app's NDK version to one provided by your version of Android Studio in File > Project Structure > Modules
+
 ## iOS implementation
 
 iOS implementation coming soon.
