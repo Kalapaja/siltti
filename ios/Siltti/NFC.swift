@@ -18,6 +18,8 @@ final class NFC: NSObject, ObservableObject {
     @Published var reconnect = false
     @Published var timer: TimeInterval = 15
     
+    var connectTask: Task<Void, Never>?
+
     init(data: TransmitData) {
         self.data = data
         super.init()
@@ -25,7 +27,9 @@ final class NFC: NSObject, ObservableObject {
     
     func start(process: Process) {
         self.process = nil
+        connectTask?.cancel()
         session?.invalidate()
+        
         self.process = process
         error = nil
         log = []
@@ -50,10 +54,11 @@ extension NFC: NFCTagReaderSessionDelegate {
         if reconnect {
             // auto-reconnect session on failure
             DispatchQueue.main.async {
+                let codes: [NFCReaderError.Code] = [.readerSessionInvalidationErrorSessionTimeout, .readerSessionInvalidationErrorSystemIsBusy]
                 if self.session == nil {
                     print("restarting session")
                     self.start(process: process)
-                } else if let nfcError = error as? NFCReaderError, nfcError.code == .readerSessionInvalidationErrorSystemIsBusy {
+                } else if let nfcError = error as? NFCReaderError, codes.contains(nfcError.code) {
                     print("system is busy")
                     self.start(process: process)
                 }
@@ -67,13 +72,19 @@ extension NFC: NFCTagReaderSessionDelegate {
     func tagReaderSession(_ session: NFCTagReaderSession, didDetect tags: [NFCTag]) {
         self.error = nil
         guard let tag = tags.first else { return }
-        Task { await connect(session: session, to: tag) }
-        if timer > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + timer) {
-                self.error = "RESTART POLLING"
-                session.restartPolling()
-            }
+        connectTask = Task {
+            async let c: Void = await connect(session: session, to: tag)
+            async let t: Void = await restartPolling(session: session, sleep: timer)
+            _ = await [c, t]
         }
+    }
+    
+    @MainActor
+    func restartPolling(session: NFCTagReaderSession, sleep: TimeInterval) async {
+        guard sleep > 0 else { return }
+        try? await Task.sleep(for: .seconds(sleep))
+        self.error = "RESTART POLLING"
+        session.restartPolling()
     }
     
     @MainActor
@@ -121,6 +132,9 @@ extension NFC: NFCTagReaderSessionDelegate {
             if timer == 0 {
                 self.session = nil
                 session.invalidate()
+            } else {
+                connectTask?.cancel()
+                session.restartPolling()
             }
         }
     }

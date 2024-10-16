@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		FD52770F2CBE8F4C00F9B2F4 /* SilttiUniffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = FD52770E2CBE8F4C00F9B2F4 /* SilttiUniffiFFI.xcframework */; };
+		FD3DD3E42CBFE73500761A1C /* SilttiUniffiFFI.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = FD52770E2CBE8F4C00F9B2F4 /* SilttiUniffiFFI.xcframework */; };
 		FD9998D72CB6CF9A00E1EAF5 /* TransmitScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9998CB2CB6CF9A00E1EAF5 /* TransmitScreen.swift */; };
 		FD9998D82CB6CF9A00E1EAF5 /* ScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9998CD2CB6CF9A00E1EAF5 /* ScannerView.swift */; };
 		FD9998D92CB6CF9A00E1EAF5 /* SilttiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9998D42CB6CF9A00E1EAF5 /* SilttiApp.swift */; };
@@ -60,7 +60,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FD52770F2CBE8F4C00F9B2F4 /* SilttiUniffiFFI.xcframework in Frameworks */,
+				FD3DD3E42CBFE73500761A1C /* SilttiUniffiFFI.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -356,7 +356,6 @@
 		FD1505752CAAC26900995EB8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Siltti/Siltti.entitlements;
@@ -407,7 +406,6 @@
 		FD1505762CAAC26900995EB8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Siltti/Siltti.entitlements;
