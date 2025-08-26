@@ -20,8 +20,8 @@ scale-info = {version = "2.11.1"}
 serde = {version = "1.0.198", features = ["derive"]}
 serde_json = "1.0.81"
 sled = "0.34.7"
-substrate-crypto-light = {git = "https://github.com/Alzymologist/substrate-crypto-light", default-features = false, features = ["sr25519"], rev = "7d933807f0ffaf150a069266083e8b2fc9cadf69"}
-substrate_parser = {git = "https://github.com/Alzymologist/substrate-parser", default-features = false, rev = "65de6a4fe207a64f9857247af4e9f7509fa6de4f"}
+substrate-crypto-light = {git = "https://github.com/Kalapaja/substrate-crypto-light", default-features = false, features = ["sr25519"], rev = "7d933807f0ffaf150a069266083e8b2fc9cadf69"}
+substrate_parser = {git = "https://github.com/Kalapaja/substrate-parser", default-features = false, rev = "65de6a4fe207a64f9857247af4e9f7509fa6de4f"}
 thiserror = "1.0.35"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.23.1", features = ["handshake", "rustls-tls-native-roots"] }
